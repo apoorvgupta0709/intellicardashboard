@@ -41,7 +41,7 @@ export default async function LiveDeviceMonitoringPage({
       {/* Charts + Map Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <BatteryMetricsChart deviceId={deviceId} />
-        <DeviceGPSMapDynamic />
+        <DeviceGPSMapDynamic deviceId={deviceId} />
       </div>
     </div>
   );

@@ -14,6 +14,6 @@ const DeviceGPSMap = dynamic(
   }
 );
 
-export default function DeviceGPSMapDynamic() {
-  return <DeviceGPSMap />;
+export default function DeviceGPSMapDynamic({ deviceId }: { deviceId: string }) {
+  return <DeviceGPSMap deviceId={deviceId} />;
 }

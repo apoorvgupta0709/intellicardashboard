@@ -55,6 +55,7 @@ export default function DeviceGPSMap({ deviceId }: { deviceId: string }) {
             </div>
 
             <MapContainer
+                key={`${deviceId}-${hasData ? 'tracking' : 'empty'}`}
                 center={defaultCenter}
                 zoom={hasData ? 13 : 10}
                 className="h-[400px] lg:h-full w-full z-0"

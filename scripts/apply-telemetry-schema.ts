@@ -20,13 +20,13 @@ async function applyMigrations() {
 
   try {
     console.log('1. Enabling extensions...');
-    await db.execute(sql`CREATE EXTENSION IF NOT EXISTS timescaledb;`);
+    // await db.execute(sql`CREATE EXTENSION IF NOT EXISTS timescaledb;`);
     await db.execute(sql`CREATE EXTENSION IF NOT EXISTS postgis;`);
 
     console.log('2. Creating telemetry schema...');
     await db.execute(sql`CREATE SCHEMA IF NOT EXISTS telemetry;`);
 
-    console.log('3. Creating battery_readings hypertable...');
+    console.log('3. Creating battery_readings table...');
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS telemetry.battery_readings (
           time         TIMESTAMPTZ    NOT NULL,
@@ -41,16 +41,11 @@ async function applyMigrations() {
           power_watts  REAL
       );
     `);
-    await db.execute(sql`
-      SELECT create_hypertable('telemetry.battery_readings', 'time',
-          chunk_time_interval => INTERVAL '1 day',
-          if_not_exists => TRUE
-      );
-    `);
+    // Note: Skipping create_hypertable as timescaledb is not available
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_battery_readings_device ON telemetry.battery_readings (device_id, time DESC);`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_battery_readings_soc ON telemetry.battery_readings (device_id, soc, time DESC);`);
 
-    console.log('4. Creating gps_readings hypertable...');
+    console.log('4. Creating gps_readings table...');
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS telemetry.gps_readings (
           time            TIMESTAMPTZ   NOT NULL,
@@ -67,12 +62,7 @@ async function applyMigrations() {
           is_moving       BOOLEAN
       );
     `);
-    await db.execute(sql`
-      SELECT create_hypertable('telemetry.gps_readings', 'time',
-          chunk_time_interval => INTERVAL '1 day',
-          if_not_exists => TRUE
-      );
-    `);
+    // Note: Skipping create_hypertable as timescaledb is not available
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_gps_device_time ON telemetry.gps_readings (device_id, time DESC);`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_gps_location ON telemetry.gps_readings USING GIST (location);`);
 
@@ -124,105 +114,7 @@ async function applyMigrations() {
       );
     `);
 
-    console.log('8. Creating continuous aggregates...');
-    // Drop existing views if this runs multiple times
-    try { await db.execute(sql`DROP MATERIALIZED VIEW IF EXISTS telemetry.battery_hourly CASCADE;`); } catch (e) { }
-    try { await db.execute(sql`DROP MATERIALIZED VIEW IF EXISTS telemetry.battery_daily CASCADE;`); } catch (e) { }
-
-    await db.execute(sql`
-      CREATE MATERIALIZED VIEW telemetry.battery_hourly WITH (timescaledb.continuous) AS
-      SELECT
-          time_bucket('1 hour', time)    AS bucket,
-          device_id,
-          AVG(soc)                       AS avg_soc,
-          MIN(soc)                       AS min_soc,
-          MAX(soc)                       AS max_soc,
-          AVG(voltage)                   AS avg_voltage,
-          MIN(voltage)                   AS min_voltage,
-          MAX(voltage)                   AS max_voltage,
-          AVG(current)                   AS avg_current,
-          AVG(temperature)               AS avg_temp,
-          MAX(temperature)               AS max_temp,
-          MAX(charge_cycle)              AS charge_cycle,
-          AVG(soh)                       AS avg_soh,
-          COUNT(*)                       AS reading_count
-      FROM telemetry.battery_readings
-      GROUP BY bucket, device_id
-      WITH NO DATA;
-    `);
-
-    // We add policies if they don't already exist, handle errors simply:
-    try {
-      await db.execute(sql`
-        SELECT add_continuous_aggregate_policy('telemetry.battery_hourly',
-            start_offset    => INTERVAL '3 hours',
-            end_offset      => INTERVAL '30 minutes',
-            schedule_interval => INTERVAL '30 minutes'
-        );
-      `);
-    } catch (e) { console.log('Continuous aggregate policy (hourly) may already exist.'); }
-
-    await db.execute(sql`
-      CREATE MATERIALIZED VIEW telemetry.battery_daily WITH (timescaledb.continuous) AS
-      SELECT
-          time_bucket('1 day', time)     AS bucket,
-          device_id,
-          AVG(soc)                       AS avg_soc,
-          MIN(soc)                       AS min_soc,
-          MAX(soc)                       AS max_soc,
-          AVG(voltage)                   AS avg_voltage,
-          AVG(current)                   AS avg_current,
-          AVG(temperature)               AS avg_temp,
-          MAX(temperature)               AS max_temp,
-          MAX(charge_cycle)              AS charge_cycle,
-          MIN(soh)                       AS min_soh,
-          COUNT(*)                       AS reading_count
-      FROM telemetry.battery_readings
-      GROUP BY bucket, device_id
-      WITH NO DATA;
-    `);
-
-    try {
-      await db.execute(sql`
-        SELECT add_continuous_aggregate_policy('telemetry.battery_daily',
-            start_offset    => INTERVAL '3 days',
-            end_offset      => INTERVAL '1 hour',
-            schedule_interval => INTERVAL '1 hour'
-        );
-      `);
-    } catch (e) { console.log('Continuous aggregate policy (daily) may already exist.'); }
-
-
-    console.log('9. Creating compression policies...');
-    try {
-      await db.execute(sql`
-        ALTER TABLE telemetry.battery_readings SET (
-            timescaledb.compress,
-            timescaledb.compress_segmentby = 'device_id',
-            timescaledb.compress_orderby = 'time DESC'
-        );
-      `);
-      await db.execute(sql`SELECT add_compression_policy('telemetry.battery_readings', INTERVAL '7 days');`);
-    } catch (e) { console.log('Compression setting (battery) may already exist.'); }
-
-    try {
-      await db.execute(sql`
-        ALTER TABLE telemetry.gps_readings SET (
-            timescaledb.compress,
-            timescaledb.compress_segmentby = 'device_id',
-            timescaledb.compress_orderby = 'time DESC'
-        );
-      `);
-      await db.execute(sql`SELECT add_compression_policy('telemetry.gps_readings', INTERVAL '7 days');`);
-    } catch (e) { console.log('Compression setting (gps) may already exist.'); }
-
-    console.log('10. Creating retention policies...');
-    try {
-      await db.execute(sql`SELECT add_retention_policy('telemetry.battery_readings', INTERVAL '6 months');`);
-      await db.execute(sql`SELECT add_retention_policy('telemetry.gps_readings', INTERVAL '6 months');`);
-    } catch (e) { console.log('Retention policy may already exist.'); }
-
-    console.log('11. Creating alert_config table...');
+    console.log('8. Creating alert_config table...');
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS telemetry.alert_config (
           id              INTEGER PRIMARY KEY DEFAULT 1,
@@ -231,6 +123,7 @@ async function applyMigrations() {
           CONSTRAINT single_row CHECK (id = 1)
       );
     `);
+
     // Seed default thresholds if empty
     await db.execute(sql`
       INSERT INTO telemetry.alert_config (id, config) VALUES (1, ${JSON.stringify({
