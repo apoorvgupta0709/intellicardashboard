@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 
-const FleetMapContext = dynamic(
+const FleetMap = dynamic(
   () => import('@/components/battery-monitoring/FleetMap'),
   {
     ssr: false,
@@ -14,6 +14,6 @@ const FleetMapContext = dynamic(
   }
 );
 
-export default function FleetMapDynamic() {
-  return <FleetMapContext />;
+export default function BatteryMonitoringClient() {
+  return <FleetMap />;
 }
