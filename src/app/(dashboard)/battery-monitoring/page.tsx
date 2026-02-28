@@ -3,11 +3,7 @@ import FleetKPICards from '@/components/battery-monitoring/FleetKPICards';
 import SOCDistribution from '@/components/battery-monitoring/SOCDistribution';
 import AlertFeed from '@/components/battery-monitoring/AlertFeed';
 
-// We must dynamically import the map because Leaflet requires window
-const FleetMap = dynamic(
-    () => import('@/components/battery-monitoring/FleetMap'),
-    { ssr: false, loading: () => <div className="h-[400px] lg:h-[600px] bg-slate-100 animate-pulse rounded-lg border flex items-center justify-center text-gray-500">Loading Map Engine...</div> }
-);
+import FleetMapDynamic from '@/components/battery-monitoring/FleetMapDynamic';
 
 export default function BatteryMonitoringDashboard() {
     return (
@@ -29,7 +25,7 @@ export default function BatteryMonitoringDashboard() {
 
                 {/* Map takes up 2 columns */}
                 <div className="lg:col-span-2">
-                    <FleetMap />
+                    <FleetMapDynamic />
                 </div>
 
                 {/* Analytics & Alerts stacked in 1 column */}

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { filterCANBatch } from '@/lib/telemetry/data-quality';
 import { insertCANReadings } from '@/lib/telemetry/queries';
 import { CANReading } from '@/lib/telemetry/types';
+import { processAlerts } from '@/lib/telemetry/alert-engine';
 
 export async function POST(req: Request) {
     try {
@@ -15,6 +16,8 @@ export async function POST(req: Request) {
 
         if (valid.length > 0) {
             await insertCANReadings(valid as CANReading[]);
+            // Evaluate valid readings for potential priority alerts
+            await processAlerts(valid as CANReading[]);
         }
 
         // In a real production app, we would log the `rejected` records to telemetry.rejected_readings table.

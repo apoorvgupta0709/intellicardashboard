@@ -8,20 +8,29 @@ export default function FleetKPICards() {
         activeBatteries: 0,
         avgSoh: "0.0",
         chargingCount: 0,
-        activeAlerts: 0
+        activeAlerts: 0,
+        offlineCount: 0
     });
 
     useEffect(() => {
-        fetch('/api/telemetry/fleet/overview')
-            .then(res => res.json())
-            .then(json => {
-                if (!json.error) setData(json);
+        Promise.all([
+            fetch('/api/telemetry/fleet/overview').then(res => res.json()),
+            fetch('/api/telemetry/devices/status').then(res => res.json())
+        ])
+            .then(([overviewJson, statusJson]) => {
+                let offline = 0;
+                if (Array.isArray(statusJson)) {
+                    offline = statusJson.filter(s => s.status === 'Offline').length;
+                }
+                if (!overviewJson.error) {
+                    setData({ ...overviewJson, offlineCount: offline });
+                }
             })
             .catch(console.error);
     }, []);
 
     return (
-        <Grid numItemsSm={2} numItemsLg={4} className="gap-6">
+        <Grid numItemsSm={2} numItemsLg={5} className="gap-6">
             <Card decoration="top" decorationColor="blue">
                 <Text>Active Batteries</Text>
                 <Metric>{data.activeBatteries}</Metric>
@@ -42,6 +51,10 @@ export default function FleetKPICards() {
             <Card decoration="top" decorationColor="amber">
                 <Text>Charging Right Now</Text>
                 <Metric>{data.chargingCount}</Metric>
+            </Card>
+            <Card decoration="top" decorationColor="purple">
+                <Text>Devices Offline</Text>
+                <Metric>{data.offlineCount}</Metric>
             </Card>
             <Card decoration="top" decorationColor="rose">
                 <Text>Active Alerts</Text>

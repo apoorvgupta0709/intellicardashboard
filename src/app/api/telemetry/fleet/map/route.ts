@@ -1,18 +1,21 @@
 import { NextResponse } from 'next/server';
 import { sql } from 'drizzle-orm';
 import { telemetryDb } from '@/lib/telemetry/db';
+import { getServerSession } from '@/lib/auth/server-auth';
 
-export async function GET() {
-    try {
-        // We want the most recent GPS location for each device, along with its most recent SOC 
-        // and if there is a critical alert active.
+export async function GET(req: Request) {
+  try {
+    const auth = await getServerSession(req);
+    // We want the most recent GPS location for each device, along with its most recent SOC 
+    // and if there is a critical alert active.
 
-        // In TimescaleDB, querying the most recent over a hypertable can be expensive without SkipScan
-        // or properly indexed JOINs. For a roadmap MVP, DISTINCT ON is acceptable for <50k entities.
-        const mapResult = await telemetryDb.execute(sql`
+    // In TimescaleDB, querying the most recent over a hypertable can be expensive without SkipScan
+    // or properly indexed JOINs. For a roadmap MVP, DISTINCT ON is acceptable for <50k entities.
+    const mapResult = await telemetryDb.execute(sql`
       WITH LatestGPS AS (
         SELECT DISTINCT ON (device_id) device_id, latitude, longitude, time
         FROM telemetry.gps_readings
+        ${auth.role === 'dealer' ? sql`WHERE device_id IN (SELECT device_id FROM device_battery_map WHERE dealer_id = ${auth.dealer_id})` : sql``}
         ORDER BY device_id, time DESC
       ),
       LatestBattery AS (
@@ -46,11 +49,11 @@ export async function GET() {
       LEFT JOIN LatestBattery b ON g.device_id = b.device_id
     `);
 
-        return NextResponse.json(mapResult, { status: 200 });
+    return NextResponse.json(mapResult, { status: 200 });
 
-    } catch (error) {
-        console.error('Error fetching map data:', error);
-        // Graceful fallback dummy data format
-        return NextResponse.json([], { status: 500 });
-    }
+  } catch (error) {
+    console.error('Error fetching map data:', error);
+    // Graceful fallback dummy data format
+    return NextResponse.json([], { status: 500 });
+  }
 }
