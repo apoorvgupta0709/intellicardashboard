@@ -2,11 +2,11 @@ import { NextResponse } from 'next/server';
 
 export async function GET(
   _request: Request,
-  { params }: { params: { deviceId: string } }
+  ctx: RouteContext<'/api/telemetry/devices/[deviceId]/trips'>
 ) {
-  const { deviceId } = params;
+  const { deviceId } = await ctx.params;
 
-  // TODO: Replace with your real trips fetch logic.
+  // TODO: Replace with your real trips fetch logic
   return NextResponse.json({
     success: true,
     deviceId,
