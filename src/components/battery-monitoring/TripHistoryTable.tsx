@@ -14,19 +14,23 @@ type TripSummary = {
     efficiency_km_per_kwh: number | null;
 };
 
-export default function TripHistoryTable({ limit = 50 }: { limit?: number }) {
+export default function TripHistoryTable({ limit = 50, deviceId }: { limit?: number; deviceId?: string }) {
     const [trips, setTrips] = useState<TripSummary[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        fetch(`/api/telemetry/trips/overview?limit=${limit}`)
+        const url = deviceId
+            ? `/api/telemetry/devices/${deviceId}/trips?limit=${limit}`
+            : `/api/telemetry/trips/overview?limit=${limit}`;
+
+        fetch(url)
             .then(res => res.json())
             .then(json => {
                 if (Array.isArray(json)) setTrips(json);
             })
             .catch(console.error)
             .finally(() => setLoading(false));
-    }, []);
+    }, [deviceId, limit]);
 
     return (
         <Card>

@@ -1,35 +1,48 @@
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
-
+import DeviceDetailsShell from '@/components/battery-monitoring/DeviceDetailsShell';
+import BatteryMetricsChart from '@/components/battery-monitoring/BatteryMetricsChart';
 import DeviceGPSMapDynamic from '@/components/battery-monitoring/DeviceGPSMapDynamic';
 
 export default async function LiveDeviceMonitoringPage({
   params,
 }: {
-  params: { deviceId: string };
+  params: Promise<{ deviceId: string }>;
 }) {
-  const { deviceId } = params;
+  const { deviceId } = await params;
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center gap-3">
+      {/* Header */}
+      <div className="flex items-center gap-4">
         <Link
           href="/battery-monitoring"
-          className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900"
+          className="inline-flex items-center justify-center h-9 w-9 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 transition-colors"
         >
-          <ArrowLeftIcon className="h-5 w-5" />
-          Back
+          <ArrowLeftIcon className="h-4 w-4 text-slate-600" />
         </Link>
-
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-gray-900">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
             Live Device Monitoring
           </h1>
-          <p className="mt-1 text-sm text-gray-500">Device ID: {deviceId}</p>
+          <p className="text-sm text-slate-500 mt-0.5">
+            Device: <span className="font-mono font-semibold text-slate-700">{deviceId}</span>
+          </p>
         </div>
+        <span className="ml-auto flex items-center gap-2 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-full">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse-soft" />
+          Live Updates
+        </span>
       </div>
 
-      <DeviceGPSMapDynamic />
+      {/* Device Details Card */}
+      <DeviceDetailsShell deviceId={deviceId} />
+
+      {/* Charts + Map Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <BatteryMetricsChart deviceId={deviceId} />
+        <DeviceGPSMapDynamic />
+      </div>
     </div>
   );
 }

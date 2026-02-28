@@ -1,8 +1,12 @@
 "use client";
 
 import TripHistoryTable from '@/components/battery-monitoring/TripHistoryTable';
+import SOCTrendsChart from '@/components/battery-monitoring/SOCTrendsChart';
 import { Card, Text } from '@tremor/react';
 
+/**
+ * Fleet Trip Analytics Page — enhanced with SOC Trends (#87)
+ */
 export default function TripsAnalyticsPage() {
     return (
         <div className="max-w-7xl mx-auto space-y-6">
@@ -14,6 +18,9 @@ export default function TripsAnalyticsPage() {
                     Analyze recent trips across the entire mapped fleet. Evaluate distance traveled and energy efficiency ratings.
                 </p>
             </div>
+
+            {/* SOC Trends Chart */}
+            <SOCTrendsChart days={30} />
 
             <div className="grid grid-cols-1 gap-6">
                 <Card decoration="top" decorationColor="blue">
