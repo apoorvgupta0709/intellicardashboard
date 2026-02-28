@@ -1,6 +1,6 @@
 import { IntellicarCANResponse, IntellicarGPSResponse } from './types';
 
-const BASE_URL = process.env.INTELLICAR_API_URL || 'https://api.intellicar.in/v1';
+const BASE_URL = 'https://apiplatform.intellicar.in/api/standard';
 const USERNAME = process.env.INTELLICAR_USERNAME || '';
 const PASSWORD = process.env.INTELLICAR_PASSWORD || '';
 
@@ -12,65 +12,73 @@ export async function getIntellicarToken(): Promise<string> {
         return cachedToken;
     }
 
-    const response = await fetch(`${BASE_URL}/auth/login`, {
+    const username = process.env.INTELLICAR_USERNAME || USERNAME;
+    const password = process.env.INTELLICAR_PASSWORD || PASSWORD;
+
+    const response = await fetch(`${BASE_URL}/gettoken`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: USERNAME, password: PASSWORD })
+        body: JSON.stringify({ username, password })
     });
 
-    if (!response.ok) {
-        throw new Error(`Intellicar auth failed: ${response.statusText}`);
+    const data = await response.json();
+    if (data.status !== 'SUCCESS') {
+        console.error('Intellicar Auth Error Response:', data);
+        throw new Error(`Intellicar auth failed: ${data.message || 'Unknown error'}`);
     }
 
-    const data = await response.json();
-    cachedToken = data.token;
-    // Assume token expires in 24h if not specified, buffer by 5 mins
-    const expiresInMs = (data.expires_in || 86400) * 1000;
-    tokenExpiresAt = Date.now() + expiresInMs - 300000;
+    cachedToken = data.data.token;
+    // Buffer by 5 mins
+    tokenExpiresAt = Date.now() + 3600 * 1000 - 300000;
 
     return cachedToken!;
 }
 
-async function fetchFromIntellicar<T>(endpoint: string, params: Record<string, string>): Promise<T> {
+async function postToIntellicar<T>(endpoint: string, payload: any): Promise<T> {
     const token = await getIntellicarToken();
-    const url = new URL(`${BASE_URL}${endpoint}`);
-
-    Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
-
-    const response = await fetch(url.toString(), {
-        headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/json'
-        }
+    const response = await fetch(`${BASE_URL}/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, token })
     });
 
     if (!response.ok) {
         throw new Error(`Intellicar API error at ${endpoint}: ${response.statusText}`);
     }
 
-    return response.json();
+    const data = await response.json();
+    if (data.status !== 'SUCCESS') {
+        throw new Error(`Intellicar API Error [${endpoint}]: ${data.message || 'Unknown error'}`);
+    }
+
+    return data.data;
 }
 
 /**
- * Fetch CAN data (battery telemetry) for a given device and time range.
+ * List all vehicle-device mappings.
  */
-export async function getCANData(deviceId: string, startTimeTs: number, endTimeTs: number): Promise<IntellicarCANResponse[]> {
-    // Using hypothetical endpoint based on standard telematics APIs. 
-    // Adjust to true Intellicar endpoint path as per their documentation.
-    return fetchFromIntellicar<IntellicarCANResponse[]>('/telemetry/can', {
-        device_id: deviceId,
-        start_time: startTimeTs.toString(),
-        end_time: endTimeTs.toString()
+export async function listVehicles(): Promise<any[]> {
+    return postToIntellicar<any[]>('listvehicledevicemapping', {});
+}
+
+/**
+ * Fetch Battery Metrics history for a given vehicle and time range.
+ */
+export async function getBatteryMetricsHistory(vehicleNo: string, startTimeTs: number, endTimeTs: number): Promise<any[]> {
+    return postToIntellicar<any[]>('getbatterymetricshistory', {
+        vehicleno: vehicleNo,
+        starttime: startTimeTs,
+        endtime: endTimeTs
     });
 }
 
 /**
- * Fetch GPS history for a given device and time range.
+ * Fetch GPS history for a given vehicle and time range.
  */
-export async function getGPSHistory(deviceId: string, startTimeTs: number, endTimeTs: number): Promise<IntellicarGPSResponse[]> {
-    return fetchFromIntellicar<IntellicarGPSResponse[]>('/telemetry/gps', {
-        device_id: deviceId,
-        start_time: startTimeTs.toString(),
-        end_time: endTimeTs.toString()
+export async function getGPSHistory(vehicleNo: string, startTimeTs: number, endTimeTs: number): Promise<any[]> {
+    return postToIntellicar<any[]>('getgpshistory', {
+        vehicleno: vehicleNo,
+        starttime: startTimeTs,
+        endtime: endTimeTs
     });
 }

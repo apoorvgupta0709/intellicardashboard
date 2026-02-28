@@ -38,7 +38,8 @@ async function applyMigrations() {
           current      REAL,
           charge_cycle INTEGER,
           temperature  REAL,
-          power_watts  REAL
+          power_watts  REAL,
+          PRIMARY KEY (time, device_id)
       );
     `);
     // Note: Skipping create_hypertable as timescaledb is not available
@@ -59,7 +60,8 @@ async function applyMigrations() {
           device_battery  REAL,
           vehicle_battery REAL,
           ignition_on     BOOLEAN,
-          is_moving       BOOLEAN
+          is_moving       BOOLEAN,
+          PRIMARY KEY (time, device_id)
       );
     `);
     // Note: Skipping create_hypertable as timescaledb is not available
