@@ -17,7 +17,7 @@ const db = drizzle(client);
 
 async function applyMigrations() {
   console.log('Applying telemetry migrations...');
-  
+
   try {
     console.log('1. Enabling extensions...');
     await db.execute(sql`CREATE EXTENSION IF NOT EXISTS timescaledb;`);
@@ -126,9 +126,9 @@ async function applyMigrations() {
 
     console.log('8. Creating continuous aggregates...');
     // Drop existing views if this runs multiple times
-    try { await db.execute(sql`DROP MATERIALIZED VIEW IF EXISTS telemetry.battery_hourly CASCADE;`); } catch(e) {}
-    try { await db.execute(sql`DROP MATERIALIZED VIEW IF EXISTS telemetry.battery_daily CASCADE;`); } catch(e) {}
-    
+    try { await db.execute(sql`DROP MATERIALIZED VIEW IF EXISTS telemetry.battery_hourly CASCADE;`); } catch (e) { }
+    try { await db.execute(sql`DROP MATERIALIZED VIEW IF EXISTS telemetry.battery_daily CASCADE;`); } catch (e) { }
+
     await db.execute(sql`
       CREATE MATERIALIZED VIEW telemetry.battery_hourly WITH (timescaledb.continuous) AS
       SELECT
@@ -150,7 +150,7 @@ async function applyMigrations() {
       GROUP BY bucket, device_id
       WITH NO DATA;
     `);
-    
+
     // We add policies if they don't already exist, handle errors simply:
     try {
       await db.execute(sql`
@@ -203,8 +203,8 @@ async function applyMigrations() {
         );
       `);
       await db.execute(sql`SELECT add_compression_policy('telemetry.battery_readings', INTERVAL '7 days');`);
-    } catch(e) { console.log('Compression setting (battery) may already exist.'); }
-    
+    } catch (e) { console.log('Compression setting (battery) may already exist.'); }
+
     try {
       await db.execute(sql`
         ALTER TABLE telemetry.gps_readings SET (
@@ -214,13 +214,39 @@ async function applyMigrations() {
         );
       `);
       await db.execute(sql`SELECT add_compression_policy('telemetry.gps_readings', INTERVAL '7 days');`);
-    } catch(e) { console.log('Compression setting (gps) may already exist.'); }
+    } catch (e) { console.log('Compression setting (gps) may already exist.'); }
 
     console.log('10. Creating retention policies...');
     try {
       await db.execute(sql`SELECT add_retention_policy('telemetry.battery_readings', INTERVAL '6 months');`);
       await db.execute(sql`SELECT add_retention_policy('telemetry.gps_readings', INTERVAL '6 months');`);
-    } catch(e) { console.log('Retention policy may already exist.'); }
+    } catch (e) { console.log('Retention policy may already exist.'); }
+
+    console.log('11. Creating alert_config table...');
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS telemetry.alert_config (
+          id              INTEGER PRIMARY KEY DEFAULT 1,
+          config          JSONB NOT NULL DEFAULT '{}',
+          updated_at      TIMESTAMPTZ DEFAULT NOW(),
+          CONSTRAINT single_row CHECK (id = 1)
+      );
+    `);
+    // Seed default thresholds if empty
+    await db.execute(sql`
+      INSERT INTO telemetry.alert_config (id, config) VALUES (1, ${JSON.stringify({
+      low_soc: { value: 10, severity: 'critical', label: 'Low SOC (%)' },
+      deep_discharge: { value: 0, severity: 'critical', label: 'Deep Discharge SOC (%)' },
+      high_temp: { value: 55, severity: 'critical', label: 'High Temperature (°C)' },
+      soh_degradation: { value: 80, severity: 'warning', label: 'SOH Degradation (%)' },
+      overcurrent: { value: 100, severity: 'warning', label: 'Overcurrent (A)' },
+      overvoltage: { value: 58.4, severity: 'warning', label: 'Overvoltage (V)' },
+      undervoltage: { value: 42, severity: 'critical', label: 'Undervoltage (V)' },
+      no_communication_hours: { value: 6, severity: 'warning', label: 'No Communication (hours)' },
+      rapid_soh_drop: { value: 5, severity: 'critical', label: 'Rapid SOH Drop (% in 30 days)' },
+      excessive_cycles: { value: 1500, severity: 'info', label: 'Excessive Charge Cycles' }
+    })}::jsonb)
+      ON CONFLICT (id) DO NOTHING;
+    `);
 
     console.log('✅ Migrations applied successfully.');
 
