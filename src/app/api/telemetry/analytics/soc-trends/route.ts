@@ -8,6 +8,9 @@ import { getServerSession } from '@/lib/auth/server-auth';
  * Returns fleet-wide daily average SOC over time.
  * Query params: days (number, default 30)
  */
+
+export const revalidate = 60; // Cache this endpoint for 60 seconds
+
 export async function GET(req: Request) {
     try {
         const auth = await getServerSession(req);

@@ -34,7 +34,7 @@ export async function getIntellicarToken(): Promise<string> {
     return cachedToken!;
 }
 
-async function postToIntellicar<T>(endpoint: string, payload: any): Promise<T> {
+export async function postToIntellicar<T>(endpoint: string, payload: any): Promise<T> {
     const token = await getIntellicarToken();
     const response = await fetch(`${BASE_URL}/${endpoint}`, {
         method: 'POST',

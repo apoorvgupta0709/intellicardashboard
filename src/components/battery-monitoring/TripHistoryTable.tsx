@@ -9,9 +9,14 @@ type TripSummary = {
     customer_name: string | null;
     trip_start_time: string;
     trip_end_time: string;
-    distance_km: number;
-    energy_consumed_kwh: number;
-    efficiency_km_per_kwh: number | null;
+    // GPS-synthesized fields
+    gps_points?: number;
+    max_speed?: number;
+    avg_speed?: number;
+    // Legacy trip table fields (when trip_summaries exists)
+    distance_km?: number;
+    energy_consumed_kwh?: number;
+    efficiency_km_per_kwh?: number | null;
 };
 
 export default function TripHistoryTable({ limit = 50, deviceId }: { limit?: number; deviceId?: string }) {
@@ -35,7 +40,7 @@ export default function TripHistoryTable({ limit = 50, deviceId }: { limit?: num
     return (
         <Card>
             <Title>Recent Fleet Trip Summaries</Title>
-            <Text>Overview of completed delivery runs and energy performance.</Text>
+            <Text>Overview of completed delivery runs and movement data.</Text>
 
             {loading ? (
                 <div className="py-12 flex justify-center text-gray-400">Loading trip history...</div>
@@ -48,9 +53,9 @@ export default function TripHistoryTable({ limit = 50, deviceId }: { limit?: num
                             <TableHeaderCell>Completed</TableHeaderCell>
                             <TableHeaderCell>Vehicle</TableHeaderCell>
                             <TableHeaderCell>Duration</TableHeaderCell>
-                            <TableHeaderCell className="text-right">Distance (km)</TableHeaderCell>
-                            <TableHeaderCell className="text-right">Energy (kWh)</TableHeaderCell>
-                            <TableHeaderCell className="text-right">Efficiency (km/kWh)</TableHeaderCell>
+                            <TableHeaderCell className="text-right">GPS Points</TableHeaderCell>
+                            <TableHeaderCell className="text-right">Max Speed (km/h)</TableHeaderCell>
+                            <TableHeaderCell className="text-right">Avg Speed (km/h)</TableHeaderCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
@@ -73,19 +78,15 @@ export default function TripHistoryTable({ limit = 50, deviceId }: { limit?: num
                                         <Text>{durationMinutes > 60 ? `${Math.floor(durationMinutes / 60)}h ${durationMinutes % 60}m` : `${durationMinutes}m`}</Text>
                                     </TableCell>
                                     <TableCell className="text-right">
-                                        <Text>{Number(trip.distance_km).toFixed(1)}</Text>
+                                        <Text>{trip.gps_points ?? '—'}</Text>
                                     </TableCell>
                                     <TableCell className="text-right">
-                                        <Text>{Number(trip.energy_consumed_kwh).toFixed(2)}</Text>
+                                        <Badge color={Number(trip.max_speed) > 40 ? "amber" : "green"}>
+                                            {Number(trip.max_speed || 0).toFixed(1)}
+                                        </Badge>
                                     </TableCell>
                                     <TableCell className="text-right">
-                                        {trip.efficiency_km_per_kwh ? (
-                                            <Badge color={trip.efficiency_km_per_kwh > 8 ? "green" : "amber"}>
-                                                {Number(trip.efficiency_km_per_kwh).toFixed(2)}
-                                            </Badge>
-                                        ) : (
-                                            <Text className="text-gray-400">-</Text>
-                                        )}
+                                        <Text>{Number(trip.avg_speed || 0).toFixed(1)}</Text>
                                     </TableCell>
                                 </TableRow>
                             );

@@ -1,0 +1,5 @@
+[dotenv@17.3.1] injecting env (7) from .env.local -- tip: ⚙️  enable debug logging with { debug: true }
+🚀 Starting Intellicar Live Data Daemon (Running every 30 mins)...
+
+--- [2026-03-01T08:11:24.147Z] Fetching live data ---
+📡 Discovered 260 vehicles.

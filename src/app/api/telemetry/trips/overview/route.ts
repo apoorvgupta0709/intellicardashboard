@@ -1,40 +1,62 @@
 import { NextResponse } from 'next/server';
 import { sql } from 'drizzle-orm';
 import { telemetryDb } from '@/lib/telemetry/db';
+import { getServerSession } from '@/lib/auth/server-auth';
 
 export async function GET(req: Request) {
     try {
+        const auth = await getServerSession(req);
         const { searchParams } = new URL(req.url);
         const limit = Number(searchParams.get('limit')) || 20;
 
-        // Fetch the most recent trip summaries
-        const trips = await telemetryDb.execute(sql`
-      SELECT 
-        t.time AS _time,
-        t.device_id,
-        t.trip_start_time,
-        t.trip_end_time,
-        t.distance_km,
-        t.energy_consumed_kwh,
-        t.efficiency_km_per_kwh,
-        db.vehicle_number,
-        db.customer_name
-      FROM telemetry.trip_summaries t
-      LEFT JOIN device_battery_map db ON t.device_id = db.device_id
-      ORDER BY t.trip_end_time DESC
-      LIMIT ${limit}
-    `);
+        // Since we don't have a dedicated trip_summaries table, we synthesize
+        // trip-like data from GPS readings: group by device + day to show daily summaries.
+        const dealerFilter = auth.role === 'dealer'
+            ? sql`AND g.device_id IN (SELECT device_id FROM device_battery_map WHERE dealer_id = ${auth.dealer_id})`
+            : sql``;
 
-        // We do explicit returning format mapping just in case of DB type casing inconsistencies
+        const trips = await telemetryDb.execute(sql`
+            WITH daily_gps AS (
+                SELECT
+                    g.device_id,
+                    date_trunc('day', g.time) AS trip_day,
+                    MIN(g.time) AS trip_start_time,
+                    MAX(g.time) AS trip_end_time,
+                    COUNT(*) AS gps_points,
+                    MAX(g.speed) AS max_speed,
+                    AVG(g.speed) FILTER (WHERE g.speed > 0) AS avg_speed
+                FROM telemetry.gps_readings g
+                WHERE g.time >= NOW() - INTERVAL '7 days'
+                ${dealerFilter}
+                GROUP BY g.device_id, date_trunc('day', g.time)
+                HAVING COUNT(*) > 5
+            )
+            SELECT
+                d.device_id,
+                d.trip_day,
+                d.trip_start_time,
+                d.trip_end_time,
+                d.gps_points,
+                ROUND(d.max_speed::numeric, 1) AS max_speed,
+                ROUND(COALESCE(d.avg_speed, 0)::numeric, 1) AS avg_speed,
+                db.vehicle_number,
+                db.customer_name
+            FROM daily_gps d
+            LEFT JOIN device_battery_map db ON d.device_id = db.device_id
+            ORDER BY d.trip_end_time DESC
+            LIMIT ${limit}
+        `);
+
         const formattedTrips = trips.map((t: Record<string, unknown>) => ({
             device_id: String(t.device_id),
             vehicle_number: t.vehicle_number ? String(t.vehicle_number) : null,
             customer_name: t.customer_name ? String(t.customer_name) : null,
             trip_start_time: String(t.trip_start_time),
             trip_end_time: String(t.trip_end_time),
-            distance_km: Number(t.distance_km),
-            energy_consumed_kwh: Number(t.energy_consumed_kwh),
-            efficiency_km_per_kwh: t.efficiency_km_per_kwh ? Number(t.efficiency_km_per_kwh) : null
+            gps_points: Number(t.gps_points),
+            max_speed: Number(t.max_speed),
+            avg_speed: Number(t.avg_speed),
+            trip_day: String(t.trip_day),
         }));
 
         return NextResponse.json(formattedTrips, { status: 200 });

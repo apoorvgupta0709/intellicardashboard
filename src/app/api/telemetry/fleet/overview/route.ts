@@ -3,6 +3,9 @@ import { sql } from 'drizzle-orm';
 import { telemetryDb } from '@/lib/telemetry/db';
 import { getServerSession } from '@/lib/auth/server-auth';
 
+// Cache this endpoint for 60 seconds (Roadmap #98)
+export const revalidate = 60;
+
 export async function GET(req: Request) {
   try {
     const auth = await getServerSession(req);
