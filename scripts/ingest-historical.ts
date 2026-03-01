@@ -2,14 +2,14 @@ import * as dotenv from 'dotenv';
 import path from 'path';
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 
-import { listVehicles, getBatteryMetricsHistory, getGPSHistory } from '../src/lib/intellicar/client';
+import { listVehicles, getBatteryMetricsHistory, getGPSHistory, getDistanceTravelled, getFuelHistory, getFuelUsed } from '../src/lib/intellicar/client';
 import { sql } from 'drizzle-orm';
 import { pgSchema, varchar, real, boolean, timestamp } from 'drizzle-orm/pg-core';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
 async function seedHistoricalData() {
-    console.log('🚀 Starting Intellicar Historical Data Seeding (From Jan 1, 2026)...');
+    console.log('🚀 Starting Intellicar Historical Data Seeding (From Feb 1, 2026)...');
 
     if (!process.env.DATABASE_URL) {
         console.error('❌ DATABASE_URL is not defined in .env.local');
@@ -23,8 +23,8 @@ async function seedHistoricalData() {
         const vehicles = await listVehicles();
         console.log(`📡 Found ${vehicles.length} vehicles.`);
 
-        // Time range: Jan 1, 2026 to Now
-        const startMillis = new Date('2026-01-01T00:00:00Z').getTime();
+        // Time range: Feb 1, 2026 to Now
+        const startMillis = new Date('2026-02-01T00:00:00Z').getTime();
         const endMillis = Date.now();
         console.log(`📅 Fetching data from ${new Date(startMillis).toISOString()} to ${new Date(endMillis).toISOString()}`);
 
@@ -154,6 +154,82 @@ async function seedHistoricalData() {
                     }
                 } catch (err) {
                     console.error(`      ❌ Error fetching GPS history:`, err instanceof Error ? err.message : err);
+                }
+
+                // 3. Fetch & Seed Distance/Trip Data
+                try {
+                    const distData = await getDistanceTravelled(vehicleNo, currentStart, currentEnd);
+                    if (distData) {
+                        const record = Array.isArray(distData) ? distData : [distData];
+                        for (const d of record) {
+                            if (d.distance_km || d.distance || d.totaldistance) {
+                                await telemetryDb.execute(sql`
+                                    INSERT INTO telemetry.trips (
+                                        device_id, start_time, end_time, start_odometer, end_odometer, distance_km
+                                    ) VALUES (
+                                        ${vehicleNo},
+                                        ${new Date(currentStart).toISOString()},
+                                        ${new Date(currentEnd).toISOString()},
+                                        ${safe(Number(d.start_odometer || d.startodo || 0))},
+                                        ${safe(Number(d.end_odometer || d.endodo || 0))},
+                                        ${safe(Number(d.distance_km || d.distance || d.totaldistance || 0))}
+                                    )
+                                `);
+                            }
+                        }
+                        console.log(`      ✅ Inserted distance/trip data.`);
+                    }
+                } catch (err) {
+                    console.error(`      ❌ Error fetching distance:`, err instanceof Error ? err.message : err);
+                }
+
+                // 4. Fetch & Seed Fuel History
+                try {
+                    const fuelData = await getFuelHistory(vehicleNo, currentStart, currentEnd);
+                    if (fuelData && fuelData.length > 0) {
+                        for (const f of fuelData) {
+                            await telemetryDb.execute(sql`
+                                INSERT INTO telemetry.energy_consumption (
+                                    device_id, start_time, end_time, energy_used_kwh, start_soc, end_soc
+                                ) VALUES (
+                                    ${vehicleNo},
+                                    ${safe(parseIntellicarTime(f.starttime || f.start_time || currentStart))},
+                                    ${safe(parseIntellicarTime(f.endtime || f.end_time || currentEnd))},
+                                    ${safe(Number(f.fuelused || f.fuel_used || f.energy_kwh || 0))},
+                                    ${safe(f.start_soc !== undefined ? Number(f.start_soc) : null)},
+                                    ${safe(f.end_soc !== undefined ? Number(f.end_soc) : null)}
+                                )
+                            `);
+                        }
+                        console.log(`      ✅ Inserted ${fuelData.length} fuel history records.`);
+                    }
+                } catch (err) {
+                    console.error(`      ❌ Error fetching fuel history:`, err instanceof Error ? err.message : err);
+                }
+
+                // 5. Fetch & Seed Fuel Used Summary
+                try {
+                    const fuelUsed = await getFuelUsed(vehicleNo, currentStart, currentEnd);
+                    if (fuelUsed) {
+                        const records = Array.isArray(fuelUsed) ? fuelUsed : [fuelUsed];
+                        for (const f of records) {
+                            if (f.fuelused || f.fuel_used || f.energy_kwh) {
+                                await telemetryDb.execute(sql`
+                                    INSERT INTO telemetry.energy_consumption (
+                                        device_id, start_time, end_time, energy_used_kwh
+                                    ) VALUES (
+                                        ${vehicleNo},
+                                        ${new Date(currentStart).toISOString()},
+                                        ${new Date(currentEnd).toISOString()},
+                                        ${safe(Number(f.fuelused || f.fuel_used || f.energy_kwh || 0))}
+                                    )
+                                `);
+                            }
+                        }
+                        console.log(`      ✅ Inserted fuel used summary.`);
+                    }
+                } catch (err) {
+                    console.error(`      ❌ Error fetching fuel used:`, err instanceof Error ? err.message : err);
                 }
 
                 currentStart = currentEnd + 1; // Move to next chunk

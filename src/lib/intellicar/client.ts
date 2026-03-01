@@ -82,3 +82,37 @@ export async function getGPSHistory(vehicleNo: string, startTimeTs: number, endT
         endtime: endTimeTs
     });
 }
+
+/**
+ * Fetch distance travelled for a given vehicle and time range.
+ */
+export async function getDistanceTravelled(vehicleNo: string, startTimeTs: number, endTimeTs: number): Promise<any> {
+    return postToIntellicar<any>('getdistancetravelled', {
+        vehicleno: vehicleNo,
+        starttime: startTimeTs,
+        endtime: endTimeTs
+    });
+}
+
+/**
+ * Fetch fuel/energy history for a given vehicle and time range.
+ */
+export async function getFuelHistory(vehicleNo: string, startTimeTs: number, endTimeTs: number, inLitres: boolean = true): Promise<any[]> {
+    return postToIntellicar<any[]>('getfuelhistory', {
+        vehicleno: vehicleNo,
+        starttime: startTimeTs,
+        endtime: endTimeTs,
+        inlitres: inLitres
+    });
+}
+
+/**
+ * Fetch fuel/energy used summary for a given vehicle and time range.
+ */
+export async function getFuelUsed(vehicleNo: string, startTimeTs: number, endTimeTs: number): Promise<any> {
+    return postToIntellicar<any>('getfuelused', {
+        vehicleno: vehicleNo,
+        starttime: startTimeTs,
+        endtime: endTimeTs
+    });
+}

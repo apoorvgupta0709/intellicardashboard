@@ -2,7 +2,7 @@ import * as dotenv from 'dotenv';
 import path from 'path';
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 
-import { listVehicles, getIntellicarToken, postToIntellicar } from '../src/lib/intellicar/client';
+import { listVehicles, getIntellicarToken, postToIntellicar, getDistanceTravelled } from '../src/lib/intellicar/client';
 import { sql } from 'drizzle-orm';
 import { pgSchema, varchar, real, boolean, timestamp } from 'drizzle-orm/pg-core';
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -120,6 +120,35 @@ async function ingestLiveDataDaemon() {
                     }
                 } catch (e) {
                     console.error(`❌ Error CAN live for ${vehicleNo}:`, e instanceof Error ? e.message : e);
+                }
+
+                // 3. Fetch Distance Travelled (last 30 min window)
+                try {
+                    const now = Date.now();
+                    const thirtyMinsAgo = now - 30 * 60 * 1000;
+                    const distData = await getDistanceTravelled(vehicleNo, thirtyMinsAgo, now);
+                    if (distData) {
+                        const records = Array.isArray(distData) ? distData : [distData];
+                        for (const d of records) {
+                            const distKm = Number(d.distance_km || d.distance || d.totaldistance || 0);
+                            if (distKm > 0) {
+                                await telemetryDb.execute(sql`
+                                    INSERT INTO telemetry.trips (
+                                        device_id, start_time, end_time, start_odometer, end_odometer, distance_km
+                                    ) VALUES (
+                                        ${vehicleNo},
+                                        ${new Date(thirtyMinsAgo).toISOString()},
+                                        ${new Date(now).toISOString()},
+                                        ${safe(Number(d.start_odometer || d.startodo || 0))},
+                                        ${safe(Number(d.end_odometer || d.endodo || 0))},
+                                        ${safe(distKm)}
+                                    )
+                                `);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error(`❌ Error distance live for ${vehicleNo}:`, e instanceof Error ? e.message : e);
                 }
             }
             console.log(`✅ Completed live data cycle.`);
