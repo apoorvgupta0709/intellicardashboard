@@ -10,13 +10,21 @@ export async function GET(req: Request) {
   try {
     const auth = await getServerSession(req);
     // 1. Total Active Batteries
-    // From CRM bridge table:
-    const activeResult = await telemetryDb.execute(sql`
-      SELECT COUNT(*) as active_count FROM device_battery_map 
-      WHERE is_active = TRUE
-      ${auth.role === 'dealer' ? sql` AND dealer_id = ${auth.dealer_id}` : sql``}
-    `);
-    const activeBatteries = Number(activeResult[0]?.active_count || 0);
+    let activeBatteries = 0;
+    if (auth.role === 'dealer') {
+      const activeResult = await telemetryDb.execute(sql`
+        SELECT COUNT(*) as active_count FROM device_battery_map 
+        WHERE is_active = TRUE AND dealer_id = ${auth.dealer_id}
+      `);
+      activeBatteries = Number(activeResult[0]?.active_count || 0);
+    } else {
+      const activeResult = await telemetryDb.execute(sql`
+        SELECT COUNT(DISTINCT device_id) as active_count 
+        FROM telemetry.battery_readings 
+        WHERE time >= NOW() - INTERVAL '7 days'
+      `);
+      activeBatteries = Number(activeResult[0]?.active_count || 0);
+    }
 
     // 2. Fleet Average SOH
     // Average SOH from most recent reading per device

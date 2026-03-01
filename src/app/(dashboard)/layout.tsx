@@ -10,6 +10,7 @@ import {
     MapIcon,
     HeartIcon,
     Squares2X2Icon,
+    CircleStackIcon,
 } from '@heroicons/react/24/outline';
 import { RoleSwitcher } from '@/components/battery-monitoring/RoleSwitcher';
 
@@ -39,6 +40,11 @@ const navItems = [
         label: 'Device Management',
         href: '/battery-monitoring/devices',
         icon: WrenchScrewdriverIcon,
+    },
+    {
+        label: 'Database Health',
+        href: '/system/database',
+        icon: CircleStackIcon,
     },
 ];
 
