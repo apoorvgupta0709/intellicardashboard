@@ -21,6 +21,10 @@ const THRESHOLDS = {
     VOLTAGE_HIGH_WARNING: 56,
 };
 
+// Minimum minutes between repeated alerts for the same device+type combination.
+// Prevents alert spam when a battery stays in a fault condition across many ingest batches.
+const ALERT_COOLDOWN_MINUTES = 15;
+
 export async function processAlerts(readings: CANReading[]) {
     if (readings.length === 0) return;
 
@@ -73,40 +77,45 @@ export async function processAlerts(readings: CANReading[]) {
 
     if (newAlerts.length === 0) return;
 
-    // 2. Deduplicate: We shouldn't spam the same active alert.
-    // In a production system, we'd check if an identical UNACKNOWLEDGED alert exists for that device.
-    // For this MVP, we will run a simplistic raw SQL insert that ignores duplicates if we set up a constraint,
-    // or we just manually filter against existing active alerts.
-
-    // Fetch currently active unacknowledged alerts for the devices in question
+    // 2. Deduplicate using a time-based cooldown window.
+    //    Previously, this only checked unacknowledged alerts, meaning a re-triggered alert
+    //    after acknowledgement would spam new entries on every ingest batch.
+    //    Now we suppress any alert for the same device+type that was created within the
+    //    last ALERT_COOLDOWN_MINUTES, regardless of acknowledged status.
     const deviceIds = [...new Set(newAlerts.map(a => a.device_id))];
 
     if (deviceIds.length === 0) return;
 
-    const activeAlerts = await telemetryDb.execute(sql`
-    SELECT device_id, alert_type, severity 
-    FROM battery_alerts
-    WHERE acknowledged = FALSE
-      AND device_id = ANY(${deviceIds})
-  `);
+    const recentAlerts = await telemetryDb.execute(sql`
+        SELECT device_id, alert_type, severity
+        FROM battery_alerts
+        WHERE device_id = ANY(${deviceIds})
+          AND created_at >= NOW() - INTERVAL '${sql.raw(ALERT_COOLDOWN_MINUTES.toString())} minutes'
+    `);
 
-    const activeAlertSet = new Set(
-        activeAlerts.map((a: Record<string, unknown>) => `${String(a.device_id)}-${String(a.alert_type)}-${String(a.severity)}`)
+    const recentAlertSet = new Set(
+        recentAlerts.map((a: Record<string, unknown>) => `${String(a.device_id)}-${String(a.alert_type)}-${String(a.severity)}`)
     );
 
     const filteredAlerts = newAlerts.filter(
-        a => !activeAlertSet.has(`${a.device_id}-${a.alert_type}-${a.severity}`)
+        a => !recentAlertSet.has(`${a.device_id}-${a.alert_type}-${a.severity}`)
     );
 
     if (filteredAlerts.length === 0) return;
 
-    // 3. Insert the newly generated unique alerts
+    // 3. Insert new alerts using explicit column mapping via json_array_elements.
+    //    Previously used json_populate_recordset(null::battery_alerts, ...) which returns
+    //    ALL table columns (11+), causing a column count mismatch with the 5-column INSERT target.
     await telemetryDb.execute(sql`
-    INSERT INTO battery_alerts (
-      device_id, alert_type, severity, message, reading_value
-    )
-    SELECT * FROM json_populate_recordset(null::battery_alerts, ${JSON.stringify(filteredAlerts)}::json)
-  `);
+        INSERT INTO battery_alerts (device_id, alert_type, severity, message, reading_value)
+        SELECT
+            (r->>'device_id'),
+            (r->>'alert_type'),
+            (r->>'severity'),
+            (r->>'message'),
+            (r->>'reading_value')::real
+        FROM json_array_elements(${JSON.stringify(filteredAlerts)}::json) AS r
+    `);
 
     console.log(`Alert Engine: Generated ${filteredAlerts.length} new alerts.`);
 }

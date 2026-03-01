@@ -7,12 +7,18 @@ export async function GET(req: Request) {
   try {
     const auth = await getServerSession(req);
     const { searchParams } = new URL(req.url);
-    const limit = Number(searchParams.get('limit')) || 20;
-    const acknowledgedFilter = searchParams.get('acknowledged');
 
-    // Base query components
-    let baseQuery = `
-      SELECT 
+    // Clamp limit to a safe range to prevent memory exhaustion
+    const rawLimit = parseInt(searchParams.get('limit') ?? '', 10);
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 200) : 20;
+
+    const acknowledgedFilter = searchParams.get('acknowledged');
+    const filterByAck = acknowledgedFilter !== null && acknowledgedFilter !== '';
+    const isAck = acknowledgedFilter === 'true';
+
+    // Fully parameterized query — no string concatenation or sql.raw()
+    const alerts = await telemetryDb.execute(sql`
+      SELECT
         a.id,
         a.device_id,
         a.alert_type,
@@ -26,25 +32,12 @@ export async function GET(req: Request) {
         db.customer_name
       FROM battery_alerts a
       LEFT JOIN device_battery_map db ON a.device_id = db.device_id
-    `;
-
-    let conditions = [];
-    if (acknowledgedFilter !== null && acknowledgedFilter !== '') {
-      const isAck = acknowledgedFilter === 'true';
-      conditions.push(`a.acknowledged = ${isAck ? 'TRUE' : 'FALSE'}`);
-    }
-
-    if (auth.role === 'dealer') {
-      conditions.push(`db.dealer_id = '${auth.dealer_id}'`);
-    }
-
-    if (conditions.length > 0) {
-      baseQuery += ` WHERE ` + conditions.join(' AND ');
-    }
-
-    baseQuery += ` ORDER BY a.created_at DESC LIMIT ${limit}`;
-
-    const alerts = await telemetryDb.execute(sql.raw(baseQuery));
+      WHERE 1=1
+        ${filterByAck ? sql`AND a.acknowledged = ${isAck}` : sql``}
+        ${auth.role === 'dealer' ? sql`AND db.dealer_id = ${auth.dealer_id}` : sql``}
+      ORDER BY a.created_at DESC
+      LIMIT ${limit}
+    `);
 
     return NextResponse.json(alerts, { status: 200 });
 
