@@ -19,10 +19,13 @@ export async function insertCANReadings(readings: CANReading[]) {
 }
 
 export async function fetchHourlyBatterySummary(deviceId: string, hoursBack = 24): Promise<BatteryHourlyAggregate[]> {
+  // Clamp to a valid positive integer before using sql.raw() — an unbounded value here
+  // would allow arbitrarily large scans or, if the caller passes a non-integer, broken SQL.
+  const safeHours = Math.max(1, Math.min(Math.floor(Number(hoursBack)), 720)); // 1h – 30d
   const result = await telemetryDb.execute(sql`
     SELECT * FROM telemetry.battery_hourly
     WHERE device_id = ${deviceId}
-    AND bucket >= NOW() - INTERVAL '${sql.raw(hoursBack.toString())} hours'
+    AND bucket >= NOW() - INTERVAL '${sql.raw(safeHours.toString())} hours'
     ORDER BY bucket DESC
   `);
 
@@ -30,10 +33,12 @@ export async function fetchHourlyBatterySummary(deviceId: string, hoursBack = 24
 }
 
 export async function fetchDailyBatterySummary(deviceId: string, daysBack = 30): Promise<BatteryDailyAggregate[]> {
+  // Clamp to a valid positive integer before using sql.raw().
+  const safeDays = Math.max(1, Math.min(Math.floor(Number(daysBack)), 365)); // 1d – 1y
   const result = await telemetryDb.execute(sql`
     SELECT * FROM telemetry.battery_daily
     WHERE device_id = ${deviceId}
-    AND bucket >= NOW() - INTERVAL '${sql.raw(daysBack.toString())} days'
+    AND bucket >= NOW() - INTERVAL '${sql.raw(safeDays.toString())} days'
     ORDER BY bucket DESC
   `);
 
@@ -100,5 +105,32 @@ export async function insertEnergy(energy: EnergyConsumption[]) {
       device_id, start_time, end_time, energy_used_kwh, start_soc, end_soc, last_ign_on, last_ign_off, charging_events
     )
     SELECT * FROM json_populate_recordset(null::telemetry.energy_consumption, ${JSON.stringify(energy)}::json)
+  `);
+}
+
+export interface RejectedReading {
+  time: string;
+  device_id: string;
+  reading_type: string;
+  payload: Record<string, unknown>;
+  error_reason: string;
+}
+
+/**
+ * Persist rejected/invalid ingest readings to telemetry.rejected_readings for later diagnosis.
+ * The table is created by scripts/apply-telemetry-schema.ts (step 7).
+ */
+export async function insertRejectedReadings(records: RejectedReading[]) {
+  if (records.length === 0) return;
+
+  return await telemetryDb.execute(sql`
+    INSERT INTO telemetry.rejected_readings (time, device_id, reading_type, payload, error_reason)
+    SELECT
+      (r->>'time')::timestamptz,
+      (r->>'device_id'),
+      (r->>'reading_type'),
+      (r->>'payload')::jsonb,
+      (r->>'error_reason')
+    FROM json_array_elements(${JSON.stringify(records)}::json) AS r
   `);
 }
