@@ -19,9 +19,9 @@ export async function GET(req: Request) {
       activeBatteries = Number(activeResult[0]?.active_count || 0);
     } else {
       const activeResult = await telemetryDb.execute(sql`
-        SELECT COUNT(DISTINCT device_id) as active_count 
-        FROM telemetry.battery_readings 
-        WHERE time >= NOW() - INTERVAL '7 days'
+        SELECT COUNT(*) as active_count 
+        FROM vehicle_device_map 
+        WHERE is_active = TRUE
       `);
       activeBatteries = Number(activeResult[0]?.active_count || 0);
     }
