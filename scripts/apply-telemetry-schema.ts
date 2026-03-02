@@ -29,19 +29,31 @@ async function applyMigrations() {
     console.log('3. Creating battery_readings table...');
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS telemetry.battery_readings (
-          time         TIMESTAMPTZ    NOT NULL,
-          device_id    VARCHAR(50)    NOT NULL,
-          battery_id   VARCHAR(100),
-          soc          REAL,
-          soh          REAL,
-          voltage      REAL,
-          current      REAL,
-          charge_cycle INTEGER,
-          temperature  REAL,
-          power_watts  REAL,
+          time            TIMESTAMPTZ    NOT NULL,
+          device_id       VARCHAR(50)    NOT NULL,
+          battery_id      VARCHAR(100),
+          soc             REAL,
+          soh             REAL,
+          voltage         REAL,
+          current         REAL,
+          charge_cycle    INTEGER,
+          temperature     REAL,
+          power_watts     REAL,
+
+          -- NEW: store full CAN for live reads
+          source          TEXT           NOT NULL DEFAULT 'history',
+          can_payload     JSONB          NULL,
+          can_received_at TIMESTAMPTZ    NULL,
+          can_sample_time TIMESTAMPTZ    NULL,
+
           PRIMARY KEY (time, device_id)
       );
     `);
+
+    await db.execute(sql`ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'history';`);
+    await db.execute(sql`ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS can_payload JSONB NULL;`);
+    await db.execute(sql`ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS can_received_at TIMESTAMPTZ NULL;`);
+    await db.execute(sql`ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS can_sample_time TIMESTAMPTZ NULL;`);
     // Note: Skipping create_hypertable as timescaledb is not available
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_battery_readings_device ON telemetry.battery_readings (device_id, time DESC);`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_battery_readings_soc ON telemetry.battery_readings (device_id, soc, time DESC);`);

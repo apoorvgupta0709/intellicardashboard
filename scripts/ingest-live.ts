@@ -104,18 +104,31 @@ async function ingestLiveDataDaemon() {
                         const temp = extractFloat(['temperature', 'batt_temp', 'temp']);
 
                         if (soc !== null || voltage !== 0) {
-                            await (telemetryDb as any).insert(batteryReadings).values({
-                                time: new Date(),
-                                device_id: vehicleNo,
-                                battery_id: null,
-                                soc,
-                                soh,
-                                voltage,
-                                current,
-                                charge_cycle: extractFloat(['charge_cycle', 'cycles']),
-                                temperature: temp,
-                                power_watts: voltage * current
-                            }).onConflictDoNothing().execute();
+                            // best-effort sample time from payload timestamps
+                            const tsCandidates: number[] = [];
+                            for (const v of Object.values(data || {})) {
+                                if (v && typeof v === 'object' && 'timestamp' in (v as any)) {
+                                    const n = Number((v as any).timestamp);
+                                    if (!isNaN(n) && n > 0) tsCandidates.push(n);
+                                }
+                            }
+                            const maxTs = tsCandidates.length ? Math.max(...tsCandidates) : null;
+                            const canSampleIso = maxTs ? new Date(maxTs).toISOString() : null;
+
+                            const nowIso = new Date().toISOString();
+
+                            await telemetryDb.execute(sql`
+                                INSERT INTO telemetry.battery_readings (
+                                    time, device_id, battery_id,
+                                    soc, soh, voltage, current, charge_cycle, temperature, power_watts,
+                                    source, can_payload, can_received_at, can_sample_time
+                                ) VALUES (
+                                    ${nowIso}, ${vehicleNo}, ${null},
+                                    ${soc}, ${soh}, ${voltage}, ${current}, ${extractFloat(['charge_cycle', 'cycles'])}, ${temp}, ${voltage * current},
+                                    ${'live'}, ${JSON.stringify(data)}::jsonb, ${nowIso}::timestamptz, ${canSampleIso}::timestamptz
+                                )
+                                ON CONFLICT (time, device_id) DO NOTHING;
+                            `);
                         }
                     }
                 } catch (e) {

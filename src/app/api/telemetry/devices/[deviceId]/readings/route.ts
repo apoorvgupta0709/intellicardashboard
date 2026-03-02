@@ -12,10 +12,13 @@ export async function GET(
         const hoursBack = Number(searchParams.get('hours')) || 24;
         const limit = Number(searchParams.get('limit')) || 1000;
 
+        const includeCan = searchParams.get('includeCan') === '1';
+
         // Fetch the raw historical readings. For production 24h graphs, we might want 
         // to downclip/bucket the readings strictly to N points for the frontend.
         const readings = await telemetryDb.execute(sql`
       SELECT time, soc, soh, voltage, current, temperature
+      ${includeCan ? sql`, source, can_sample_time, can_payload` : sql``}
       FROM telemetry.battery_readings
       WHERE device_id = ${deviceId}
         AND time >= NOW() - INTERVAL '${sql.raw(hoursBack.toString())} hours'
