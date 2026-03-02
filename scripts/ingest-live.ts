@@ -104,6 +104,27 @@ async function ingestLiveDataDaemon() {
                         const temp = extractFloat(['temperature', 'batt_temp', 'temp']);
 
                         if (soc !== null || voltage !== 0) {
+                            // Extract extra typed scalars
+                            const rated_capacity = data.rated_capacity?.value ?? null;
+                            const dod = data.dod?.value ?? null;
+                            const no_of_cells = data.no_of_cells?.value ?? null;
+
+                            // Build Array for 24 cell voltages
+                            const cell_voltage: (number | null)[] = [];
+                            for (let j = 1; j <= 24; j++) {
+                                const key = `cell_voltage_${j.toString().padStart(2, '0')}`;
+                                const val = typeof data[key] === 'object' ? Number(data[key]?.value) : Number(data[key]);
+                                cell_voltage.push(!isNaN(val) && val > 0 ? val : null);
+                            }
+
+                            // Build Array for 12 cell temperatures
+                            const cell_temperature: (number | null)[] = [];
+                            for (let j = 1; j <= 12; j++) {
+                                const key = `cell_temperature_${j.toString().padStart(2, '0')}`;
+                                const val = typeof data[key] === 'object' ? Number(data[key]?.value) : Number(data[key]);
+                                cell_temperature.push(!isNaN(val) && val !== -273.15 ? val : null);
+                            }
+
                             // best-effort sample time from payload timestamps
                             const tsCandidates: number[] = [];
                             for (const v of Object.values(data || {})) {
@@ -121,11 +142,13 @@ async function ingestLiveDataDaemon() {
                                 INSERT INTO telemetry.battery_readings (
                                     time, device_id, battery_id,
                                     soc, soh, voltage, current, charge_cycle, temperature, power_watts,
-                                    source, can_payload, can_received_at, can_sample_time
+                                    source, can_payload, can_received_at, can_sample_time,
+                                    rated_capacity, dod, no_of_cells, cell_voltage, cell_temperature
                                 ) VALUES (
                                     ${nowIso}, ${vehicleNo}, ${null},
                                     ${soc}, ${soh}, ${voltage}, ${current}, ${extractFloat(['charge_cycle', 'cycles'])}, ${temp}, ${voltage * current},
-                                    ${'live'}, ${JSON.stringify(data)}::jsonb, ${nowIso}::timestamptz, ${canSampleIso}::timestamptz
+                                    ${'live'}, ${JSON.stringify(data)}::jsonb, ${nowIso}::timestamptz, ${canSampleIso}::timestamptz,
+                                    ${rated_capacity}, ${dod}, ${no_of_cells}, ${cell_voltage}::real[], ${cell_temperature}::real[]
                                 )
                                 ON CONFLICT (time, device_id) DO NOTHING;
                             `);

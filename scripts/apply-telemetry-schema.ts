@@ -45,6 +45,11 @@ async function applyMigrations() {
           can_payload     JSONB          NULL,
           can_received_at TIMESTAMPTZ    NULL,
           can_sample_time TIMESTAMPTZ    NULL,
+          rated_capacity  REAL           NULL,
+          dod             REAL           NULL,
+          no_of_cells     INTEGER        NULL,
+          cell_voltage    REAL[]         NULL,
+          cell_temperature REAL[]        NULL,
 
           PRIMARY KEY (time, device_id)
       );
@@ -54,9 +59,15 @@ async function applyMigrations() {
     await db.execute(sql`ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS can_payload JSONB NULL;`);
     await db.execute(sql`ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS can_received_at TIMESTAMPTZ NULL;`);
     await db.execute(sql`ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS can_sample_time TIMESTAMPTZ NULL;`);
+    await db.execute(sql`ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS rated_capacity REAL NULL;`);
+    await db.execute(sql`ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS dod REAL NULL;`);
+    await db.execute(sql`ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS no_of_cells INTEGER NULL;`);
+    await db.execute(sql`ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS cell_voltage REAL[] NULL;`);
+    await db.execute(sql`ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS cell_temperature REAL[] NULL;`);
     // Note: Skipping create_hypertable as timescaledb is not available
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_battery_readings_device ON telemetry.battery_readings (device_id, time DESC);`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_battery_readings_soc ON telemetry.battery_readings (device_id, soc, time DESC);`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_battery_readings_source_time ON telemetry.battery_readings (device_id, source, time DESC);`);
 
     console.log('4. Creating gps_readings table...');
     await db.execute(sql`
