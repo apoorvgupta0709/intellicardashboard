@@ -10,15 +10,15 @@ export async function GET(req: Request) {
         // Flag as offline if the last timestamp is older than 24 hours from NOW
         const result = await telemetryDb.execute(sql`
             WITH latest_readings AS (
-                SELECT 
-                    device_id, 
+                SELECT
+                    vehiclenos,
                     MAX(time) as last_seen
                 FROM telemetry.battery_readings
-                ${auth.role === 'dealer' ? sql`WHERE device_id IN (SELECT device_id FROM device_battery_map WHERE dealer_id = ${auth.dealer_id})` : sql``}
-                GROUP BY device_id
+                ${auth.role === 'dealer' ? sql`WHERE vehiclenos IN (SELECT vehicle_number FROM device_battery_map WHERE dealer_id = ${auth.dealer_id})` : sql``}
+                GROUP BY vehiclenos
             )
-            SELECT 
-                r.device_id,
+            SELECT
+                r.vehiclenos as device_id,
                 r.last_seen,
                 CASE 
                     WHEN r.last_seen < NOW() - INTERVAL '24 hours' THEN 'Offline'

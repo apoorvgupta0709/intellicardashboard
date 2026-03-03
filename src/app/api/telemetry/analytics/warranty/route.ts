@@ -13,16 +13,16 @@ export async function GET(req: Request) {
     // We want the LATEST reading per device that breaches thresholds
     const query = `
       WITH latest_readings AS (
-        SELECT DISTINCT ON (device_id)
-          device_id,
+        SELECT DISTINCT ON (vehiclenos)
+          vehiclenos,
           soh,
           charge_cycle,
           time as last_reading_time
         FROM telemetry.battery_readings
-        ORDER BY device_id, time DESC
+        ORDER BY vehiclenos, time DESC
       )
-      SELECT 
-        lr.device_id,
+      SELECT
+        lr.vehiclenos as device_id,
         lr.soh,
         lr.charge_cycle,
         lr.last_reading_time,
@@ -31,7 +31,7 @@ export async function GET(req: Request) {
         db.dealer_id,
         db.battery_serial
       FROM latest_readings lr
-      LEFT JOIN device_battery_map db ON lr.device_id = db.device_id
+      LEFT JOIN device_battery_map db ON db.vehicle_number = lr.vehiclenos
       WHERE (lr.soh < ${sohThreshold} OR lr.charge_cycle > ${cycleThreshold})
       ${auth.role === 'dealer' ? `AND db.dealer_id = '${auth.dealer_id}'` : ''}
       ORDER BY lr.soh ASC, lr.charge_cycle DESC

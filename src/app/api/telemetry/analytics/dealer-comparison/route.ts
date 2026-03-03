@@ -11,19 +11,19 @@ export async function GET(req: Request) {
 
     const query = `
       WITH latest_readings AS (
-        SELECT DISTINCT ON (device_id)
-          device_id,
+        SELECT DISTINCT ON (vehiclenos)
+          vehiclenos,
           soh
         FROM telemetry.battery_readings
-        ORDER BY device_id, time DESC
+        ORDER BY vehiclenos, time DESC
       ),
       dealer_stats AS (
-        SELECT 
+        SELECT
           COALESCE(db.dealer_id, 'Unassigned') as dealer_id,
-          COUNT(lr.device_id) as total_devices,
+          COUNT(lr.vehiclenos) as total_devices,
           AVG(lr.soh) as avg_soh
         FROM latest_readings lr
-        LEFT JOIN device_battery_map db ON lr.device_id = db.device_id
+        LEFT JOIN device_battery_map db ON db.vehicle_number = lr.vehiclenos
         ${auth.role === 'dealer' ? `WHERE COALESCE(db.dealer_id, 'Unassigned') = '${auth.dealer_id}'` : ''}
         GROUP BY COALESCE(db.dealer_id, 'Unassigned')
       ),

@@ -22,16 +22,16 @@ export async function GET(req: Request) {
           m.customer_name, 
           m.dealer_id,
           (
-            SELECT soc FROM telemetry.battery_readings r 
-            WHERE r.device_id = m.device_id ORDER BY time DESC LIMIT 1
+            SELECT soc FROM telemetry.battery_readings r
+            WHERE r.vehiclenos = m.vehicle_number ORDER BY time DESC LIMIT 1
           ) as current_soc,
           (
-            SELECT soh FROM telemetry.battery_readings r 
-            WHERE r.device_id = m.device_id ORDER BY time DESC LIMIT 1
+            SELECT soh FROM telemetry.battery_readings r
+            WHERE r.vehiclenos = m.vehicle_number ORDER BY time DESC LIMIT 1
           ) as current_soh,
           (
-            SELECT time FROM telemetry.battery_readings r 
-            WHERE r.device_id = m.device_id ORDER BY time DESC LIMIT 1
+            SELECT time FROM telemetry.battery_readings r
+            WHERE r.vehiclenos = m.vehicle_number ORDER BY time DESC LIMIT 1
           ) as last_seen
         FROM device_battery_map m
         WHERE m.dealer_id = ${auth.dealer_id}
@@ -41,30 +41,30 @@ export async function GET(req: Request) {
     } else {
       devicesList = await telemetryDb.execute(sql`
         WITH ActiveDevices AS (
-          SELECT DISTINCT device_id 
+          SELECT DISTINCT vehiclenos
           FROM telemetry.battery_readings
           WHERE time >= NOW() - INTERVAL '30 days'
         )
-        SELECT 
-          ad.device_id, 
-          m.battery_serial, 
-          COALESCE(m.vehicle_number, 'Unmapped (' || ad.device_id || ')') as vehicle_number, 
-          COALESCE(m.customer_name, 'Unknown Location') as customer_name, 
+        SELECT
+          ad.vehiclenos as device_id,
+          m.battery_serial,
+          COALESCE(m.vehicle_number, 'Unmapped (' || ad.vehiclenos || ')') as vehicle_number,
+          COALESCE(m.customer_name, 'Unknown Location') as customer_name,
           m.dealer_id,
           (
-            SELECT soc FROM telemetry.battery_readings r 
-            WHERE r.device_id = ad.device_id ORDER BY time DESC LIMIT 1
+            SELECT soc FROM telemetry.battery_readings r
+            WHERE r.vehiclenos = ad.vehiclenos ORDER BY time DESC LIMIT 1
           ) as current_soc,
           (
-            SELECT soh FROM telemetry.battery_readings r 
-            WHERE r.device_id = ad.device_id ORDER BY time DESC LIMIT 1
+            SELECT soh FROM telemetry.battery_readings r
+            WHERE r.vehiclenos = ad.vehiclenos ORDER BY time DESC LIMIT 1
           ) as current_soh,
           (
-            SELECT time FROM telemetry.battery_readings r 
-            WHERE r.device_id = ad.device_id ORDER BY time DESC LIMIT 1
+            SELECT time FROM telemetry.battery_readings r
+            WHERE r.vehiclenos = ad.vehiclenos ORDER BY time DESC LIMIT 1
           ) as last_seen
         FROM ActiveDevices ad
-        LEFT JOIN device_battery_map m ON ad.device_id = m.device_id
+        LEFT JOIN device_battery_map m ON m.vehicle_number = ad.vehiclenos
         ORDER BY last_seen DESC NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
       `);

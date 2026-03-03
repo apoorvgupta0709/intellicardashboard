@@ -5,7 +5,7 @@ import { CANReading } from './types';
 export type AlertSeverity = 'critical' | 'warning' | 'info';
 
 export interface BatteryAlert {
-    device_id: string;
+    device_id: string;   // stores vehiclenos value
     alert_type: string;
     severity: AlertSeverity;
     message: string;
@@ -28,12 +28,12 @@ export async function processAlerts(readings: CANReading[]) {
 
     // 1. Evaluate readings for alert conditions
     for (const r of readings) {
-        if (!r.device_id) continue;
+        if (!r.vehiclenos) continue;
 
         if (typeof r.temperature === 'number') {
             if (r.temperature >= THRESHOLDS.TEMP_CRITICAL) {
                 newAlerts.push({
-                    device_id: r.device_id,
+                    device_id: r.vehiclenos,
                     alert_type: 'High Temperature',
                     severity: 'critical',
                     message: `Critical battery temperature detected: ${r.temperature}°C`,
@@ -41,7 +41,7 @@ export async function processAlerts(readings: CANReading[]) {
                 });
             } else if (r.temperature >= THRESHOLDS.TEMP_WARNING) {
                 newAlerts.push({
-                    device_id: r.device_id,
+                    device_id: r.vehiclenos,
                     alert_type: 'High Temperature',
                     severity: 'warning',
                     message: `Elevated battery temperature detected: ${r.temperature}°C`,
@@ -53,7 +53,7 @@ export async function processAlerts(readings: CANReading[]) {
         if (typeof r.soc === 'number') {
             if (r.soc <= THRESHOLDS.SOC_CRITICAL) {
                 newAlerts.push({
-                    device_id: r.device_id,
+                    device_id: r.vehiclenos,
                     alert_type: 'Low SOC',
                     severity: 'critical',
                     message: `Battery critically low: ${r.soc}%`,
@@ -61,7 +61,7 @@ export async function processAlerts(readings: CANReading[]) {
                 });
             } else if (r.soc <= THRESHOLDS.SOC_WARNING) {
                 newAlerts.push({
-                    device_id: r.device_id,
+                    device_id: r.vehiclenos,
                     alert_type: 'Low SOC',
                     severity: 'warning',
                     message: `Battery low: ${r.soc}%`,

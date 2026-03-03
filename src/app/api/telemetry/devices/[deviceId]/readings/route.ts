@@ -20,7 +20,7 @@ export async function GET(
       SELECT time, soc, soh, voltage, current, temperature
       ${includeCan ? sql`, source, can_sample_time, can_payload` : sql``}
       FROM telemetry.battery_readings
-      WHERE device_id = ${deviceId}
+      WHERE vehiclenos = ${deviceId}
         AND time >= NOW() - INTERVAL '${sql.raw(hoursBack.toString())} hours'
       ORDER BY time ASC
       LIMIT ${limit}

@@ -37,7 +37,7 @@ async function ingestBatteryMetrics() {
         try {
             const reading: CANReading = {
                 time: new Date(record.time),
-                device_id: record.vehicleno,
+                vehiclenos: record.vehicleno,
                 soc: record.bms1soc ? Number(record.bms1soc) : null,
                 voltage: record.bms1v ? Number(record.bms1v) : null,
                 current: record.bms1c ? Number(record.bms1c) : null,
@@ -71,10 +71,20 @@ async function ingestBatteryMetrics() {
 async function insertBatteryBatch(readings: CANReading[]) {
     await telemetryDb.execute(sql`
         INSERT INTO telemetry.battery_readings (
-            time, device_id, soc, soh, voltage, current, charge_cycle, temperature, power_watts
+            time, vehiclenos, soc, soh, voltage, current, charge_cycle, temperature, power_watts
         )
-        SELECT * FROM json_populate_recordset(null::telemetry.battery_readings, ${JSON.stringify(readings)}::json)
-        ON CONFLICT DO NOTHING
+        SELECT
+            (r->>'time')::timestamptz,
+            r->>'vehiclenos',
+            (r->>'soc')::real,
+            (r->>'soh')::real,
+            (r->>'voltage')::real,
+            (r->>'current')::real,
+            (r->>'charge_cycle')::real,
+            (r->>'temperature')::real,
+            (r->>'power_watts')::real
+        FROM json_array_elements(${JSON.stringify(readings)}::json) AS r
+        ON CONFLICT (time, vehiclenos) DO NOTHING
     `);
 }
 

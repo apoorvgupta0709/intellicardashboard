@@ -12,11 +12,11 @@ export async function GET(req: Request) {
 
         // Use standard PostgreSQL date_trunc instead of TimescaleDB time_bucket
         const deviceFilter = (deviceId && deviceId !== 'all')
-            ? sql`AND device_id = ${deviceId}`
+            ? sql`AND vehiclenos = ${deviceId}`
             : sql``;
 
         const dealerFilter = auth.role === 'dealer'
-            ? sql`AND device_id IN (SELECT device_id FROM device_battery_map WHERE dealer_id = ${auth.dealer_id})`
+            ? sql`AND vehiclenos IN (SELECT vehicle_number FROM device_battery_map WHERE dealer_id = ${auth.dealer_id})`
             : sql``;
 
         const data = await telemetryDb.execute(sql`

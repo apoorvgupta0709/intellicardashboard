@@ -1,0 +1,252 @@
+{
+  "name": "Intellicar Live Telemetry — Hourly Ingest",
+  "nodes": [
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "Every 60 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0002-0002-0002-000000000002",
+      "name": "Get Intellicar Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://apiplatform.intellicar.in/api/standard/gettoken",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ username: $env.INTELLICAR_USERNAME, password: $env.INTELLICAR_PASSWORD }) }}",
+        "options": {}
+      },
+      "continueOnFail": false
+    },
+    {
+      "id": "a1b2c3d4-0003-0003-0003-000000000003",
+      "name": "List Vehicles",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://apiplatform.intellicar.in/api/standard/listvehicledevicemapping",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ token: $json.data.token }) }}",
+        "options": {}
+      },
+      "continueOnFail": false
+    },
+    {
+      "id": "a1b2c3d4-0004-0004-0004-000000000004",
+      "name": "Prepare Vehicle Batch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 300],
+      "parameters": {
+        "jsCode": "// The token is stored in the Get Intellicar Token node output\nconst token = $node[\"Get Intellicar Token\"].json.data.token;\n\n// List Vehicles returns an array; wrap it if needed\nconst raw = $json;\nconst vehicles = Array.isArray(raw) ? raw\n  : Array.isArray(raw.data) ? raw.data\n  : [];\n\nif (vehicles.length === 0) {\n  throw new Error('No vehicles returned from Intellicar API');\n}\n\n// Return one item per vehicle, each carrying the token\nreturn vehicles.map(v => ({\n  json: {\n    vehicleno: v.vehicleno || v.vehicle_no || v.vehicleNo || '',\n    token\n  }\n}));"
+      }
+    },
+    {
+      "id": "a1b2c3d4-0005-0005-0005-000000000005",
+      "name": "Vehicle Loop",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1160, 300],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "a1b2c3d4-0006-0006-0006-000000000006",
+      "name": "Get GPS Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1400, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "https://apiplatform.intellicar.in/api/standard/getlastgpsstatus",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ vehicleno: $json.vehicleno, token: $json.token }) }}",
+        "options": {}
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "a1b2c3d4-0007-0007-0007-000000000007",
+      "name": "Get Latest CAN",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1640, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "https://apiplatform.intellicar.in/api/standard/getlatestcan",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ vehicleno: $node[\"Vehicle Loop\"].json.vehicleno, token: $node[\"Vehicle Loop\"].json.token }) }}",
+        "options": {}
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "a1b2c3d4-0008-0008-0008-000000000008",
+      "name": "Get Distance Travelled",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1880, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "https://apiplatform.intellicar.in/api/standard/getdistancetravelled",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ vehicleno: $node[\"Vehicle Loop\"].json.vehicleno, starttime: Date.now() - 60 * 60 * 1000, endtime: Date.now(), token: $node[\"Vehicle Loop\"].json.token }) }}",
+        "options": {}
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "a1b2c3d4-0009-0009-0009-000000000009",
+      "name": "Transform Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2120, 300],
+      "parameters": {
+        "jsCode": "const vehicleNo = $node[\"Vehicle Loop\"].json.vehicleno;\nconst now = new Date().toISOString();\nconst sixtyMinsAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();\n\n// ── GPS ──────────────────────────────────────────────────────────────\nconst gpsRaw = $node[\"Get GPS Status\"].json;\nconst gpsData = gpsRaw?.data || gpsRaw || {};\nconst lat = Number(gpsData?.latitude || gpsData?.lat || 0);\nconst lon = Number(gpsData?.longitude || gpsData?.lng || 0);\n\nlet gpsPayload = [];\nif (!isNaN(lat) && !isNaN(lon) && lat !== 0 && lon !== 0) {\n  const speed = Number(gpsData?.speed || 0);\n  gpsPayload = [{\n    time: now,\n    device_id: vehicleNo,\n    latitude: lat,\n    longitude: lon,\n    altitude: Number(gpsData?.altitude || 0),\n    speed,\n    heading: Number(gpsData?.heading || 0),\n    device_battery: Number(gpsData?.devbattery || gpsData?.device_battery || 0),\n    vehicle_battery: Number(gpsData?.carbattery || gpsData?.vehicle_battery || 0),\n    ignition_on: gpsData?.ignstatus === 1 || gpsData?.ignition === 1 || gpsData?.ignition_on === true,\n    is_moving: speed > 0\n  }];\n}\n\n// ── CAN ──────────────────────────────────────────────────────────────\nconst canRaw = $node[\"Get Latest CAN\"].json;\nconst canData = canRaw?.data || canRaw || {};\n\nconst extractFloat = (keys, data) => {\n  for (const k of keys) {\n    if (data[k] != null) {\n      return typeof data[k] === 'object' ? Number(data[k].value ?? 0) : Number(data[k]);\n    }\n  }\n  return null;\n};\n\nconst soc = extractFloat(['soc', 'SOC', 'battery_soc'], canData);\nconst soh = extractFloat(['soh', 'SOH', 'battery_soh'], canData);\nconst voltage = extractFloat(['voltage', 'batt_vol', 'battery_voltage'], canData) ?? 0;\nconst current = extractFloat(['current', 'batt_cur', 'battery_current'], canData) ?? 0;\nconst temp = extractFloat(['temperature', 'batt_temp', 'temp'], canData);\nconst chargeCycle = extractFloat(['charge_cycle', 'cycles'], canData);\n\nlet canPayload = [];\nif (soc !== null || voltage !== 0) {\n  canPayload = [{\n    time: now,\n    vehiclenos: vehicleNo,\n    soc,\n    soh,\n    voltage,\n    current,\n    charge_cycle: chargeCycle,\n    temperature: temp,\n    power_watts: voltage * current,\n    source: 'live'\n  }];\n}\n\n// ── TRIPS ─────────────────────────────────────────────────────────────\nconst distRaw = $node[\"Get Distance Travelled\"].json;\nconst distItems = Array.isArray(distRaw)\n  ? distRaw\n  : Array.isArray(distRaw?.data) ? distRaw.data\n  : (distRaw ? [distRaw] : []);\n\nconst tripsPayload = [];\nfor (const d of distItems) {\n  const distKm = Number(d?.distance_km || d?.distance || d?.totaldistance || 0);\n  if (distKm > 0) {\n    tripsPayload.push({\n      device_id: vehicleNo,\n      start_time: sixtyMinsAgo,\n      end_time: now,\n      start_odometer: Number(d?.start_odometer || d?.startodo || 0),\n      end_odometer: Number(d?.end_odometer || d?.endodo || 0),\n      distance_km: distKm\n    });\n  }\n}\n\nreturn [{ json: { vehicleNo, gpsPayload, canPayload, tripsPayload } }];"
+      }
+    },
+    {
+      "id": "a1b2c3d4-0010-0010-0010-000000000010",
+      "name": "Post GPS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2360, 160],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.INGEST_BASE_URL }}/api/telemetry/ingest/gps-data",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($node[\"Transform Data\"].json.gpsPayload) }}",
+        "options": {}
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "a1b2c3d4-0011-0011-0011-000000000011",
+      "name": "Post CAN",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2360, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.INGEST_BASE_URL }}/api/telemetry/ingest/can-data",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($node[\"Transform Data\"].json.canPayload) }}",
+        "options": {}
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "a1b2c3d4-0012-0012-0012-000000000012",
+      "name": "Post Trips",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2360, 440],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.INGEST_BASE_URL }}/api/telemetry/ingest/trips",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($node[\"Transform Data\"].json.tripsPayload) }}",
+        "options": {}
+      },
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "Every 60 Minutes": {
+      "main": [
+        [{ "node": "Get Intellicar Token", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Intellicar Token": {
+      "main": [
+        [{ "node": "List Vehicles", "type": "main", "index": 0 }]
+      ]
+    },
+    "List Vehicles": {
+      "main": [
+        [{ "node": "Prepare Vehicle Batch", "type": "main", "index": 0 }]
+      ]
+    },
+    "Prepare Vehicle Batch": {
+      "main": [
+        [{ "node": "Vehicle Loop", "type": "main", "index": 0 }]
+      ]
+    },
+    "Vehicle Loop": {
+      "main": [
+        [{ "node": "Get GPS Status", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Get GPS Status": {
+      "main": [
+        [{ "node": "Get Latest CAN", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Latest CAN": {
+      "main": [
+        [{ "node": "Get Distance Travelled", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Distance Travelled": {
+      "main": [
+        [{ "node": "Transform Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Transform Data": {
+      "main": [
+        [{ "node": "Post GPS", "type": "main", "index": 0 }]
+      ]
+    },
+    "Post GPS": {
+      "main": [
+        [{ "node": "Post CAN", "type": "main", "index": 0 }]
+      ]
+    },
+    "Post CAN": {
+      "main": [
+        [{ "node": "Post Trips", "type": "main", "index": 0 }]
+      ]
+    },
+    "Post Trips": {
+      "main": [
+        [{ "node": "Vehicle Loop", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": ["telemetry", "intellicar", "cron"]
+}

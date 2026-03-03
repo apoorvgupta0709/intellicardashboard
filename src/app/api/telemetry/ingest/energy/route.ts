@@ -10,15 +10,10 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Expected an array of Energy consumption summaries' }, { status: 400 });
         }
 
-        const valid = payloads.filter(p => p.device_id && p.start_time && p.end_time);
+        const valid = payloads.filter(p => p.vehicleno && p.starttime_ms != null && p.endtime_ms != null);
 
         if (valid.length > 0) {
-            const formatted = valid.map(p => ({
-                ...p,
-                start_time: new Date(p.start_time),
-                end_time: new Date(p.end_time)
-            }));
-            await insertEnergy(formatted as EnergyConsumption[]);
+            await insertEnergy(valid as EnergyConsumption[]);
         }
 
         return NextResponse.json({

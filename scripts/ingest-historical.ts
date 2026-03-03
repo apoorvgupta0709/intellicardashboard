@@ -42,7 +42,7 @@ async function seedHistoricalData() {
 
         const batteryReadings = telSchema.table('battery_readings', {
             time: timestamp('time', { withTimezone: true }).notNull(),
-            device_id: varchar('device_id', { length: 50 }).notNull(),
+            vehiclenos: varchar('vehiclenos', { length: 50 }).notNull(),
             battery_id: varchar('battery_id', { length: 100 }),
             soc: real('soc'),
             soh: real('soh'),
@@ -52,7 +52,7 @@ async function seedHistoricalData() {
             temperature: real('temperature'),
             power_watts: real('power_watts'),
         }, (table) => ({
-            pk: [table.time, table.device_id]
+            pk: [table.time, table.vehiclenos]
         }));
 
         // Loop through all vehicles
@@ -77,7 +77,7 @@ async function seedHistoricalData() {
                             const current = Number(m.current || 0);
                             return {
                                 time: new Date(parseIntellicarTime(m.time || m.timestamp || m.ts)),
-                                device_id: vehicleNo,
+                                vehiclenos: vehicleNo,
                                 battery_id: (m.batteryid || m.battery_id || null) as string | null,
                                 soc: m.soc !== undefined ? Number(m.soc) : null,
                                 soh: m.soh !== undefined ? Number(m.soh) : null,
@@ -188,17 +188,32 @@ async function seedHistoricalData() {
                     const fuelData = await getFuelHistory(vehicleNo, currentStart, currentEnd);
                     if (fuelData && fuelData.length > 0) {
                         for (const f of fuelData) {
+                            const sMs = Number(f.starttime || f.start_time || currentStart);
+                            const eMs = Number(f.endtime || f.end_time || currentEnd);
                             await telemetryDb.execute(sql`
                                 INSERT INTO telemetry.energy_consumption (
-                                    device_id, start_time, end_time, energy_used_kwh, start_soc, end_soc
+                                    vehicleno, starttime_ms, endtime_ms,
+                                    start_time, end_time, is_ev,
+                                    energy_consumption, start_fl, end_fl,
+                                    start_fl_litres, end_fl_litres,
+                                    last_ign_on, last_ign_off, refueling_events
                                 ) VALUES (
                                     ${vehicleNo},
-                                    ${safe(parseIntellicarTime(f.starttime || f.start_time || currentStart))},
-                                    ${safe(parseIntellicarTime(f.endtime || f.end_time || currentEnd))},
+                                    ${safe(sMs)},
+                                    ${safe(eMs)},
+                                    ${safe(new Date(sMs).toISOString())}::timestamptz,
+                                    ${safe(new Date(eMs).toISOString())}::timestamptz,
+                                    ${safe(f.is_ev ?? true)},
                                     ${safe(Number(f.fuelused || f.fuel_used || f.energy_kwh || 0))},
-                                    ${safe(f.start_soc !== undefined ? Number(f.start_soc) : null)},
-                                    ${safe(f.end_soc !== undefined ? Number(f.end_soc) : null)}
+                                    ${safe(f.start_fl !== undefined ? Number(f.start_fl) : null)},
+                                    ${safe(f.end_fl !== undefined ? Number(f.end_fl) : null)},
+                                    ${safe(f.start_fl_litres !== undefined ? Number(f.start_fl_litres) : null)},
+                                    ${safe(f.end_fl_litres !== undefined ? Number(f.end_fl_litres) : null)},
+                                    ${safe(f.last_ign_on !== undefined ? Number(f.last_ign_on) : null)},
+                                    ${safe(f.last_ign_off !== undefined ? Number(f.last_ign_off) : null)},
+                                    '[]'::jsonb
                                 )
+                                ON CONFLICT (vehicleno, starttime_ms, endtime_ms) DO NOTHING
                             `);
                         }
                         console.log(`      ✅ Inserted ${fuelData.length} fuel history records.`);
@@ -216,13 +231,20 @@ async function seedHistoricalData() {
                             if (f.fuelused || f.fuel_used || f.energy_kwh) {
                                 await telemetryDb.execute(sql`
                                     INSERT INTO telemetry.energy_consumption (
-                                        device_id, start_time, end_time, energy_used_kwh
+                                        vehicleno, starttime_ms, endtime_ms,
+                                        start_time, end_time, is_ev,
+                                        energy_consumption, refueling_events
                                     ) VALUES (
                                         ${vehicleNo},
-                                        ${new Date(currentStart).toISOString()},
-                                        ${new Date(currentEnd).toISOString()},
-                                        ${safe(Number(f.fuelused || f.fuel_used || f.energy_kwh || 0))}
+                                        ${currentStart},
+                                        ${currentEnd},
+                                        ${new Date(currentStart).toISOString()}::timestamptz,
+                                        ${new Date(currentEnd).toISOString()}::timestamptz,
+                                        true,
+                                        ${safe(Number(f.fuelused || f.fuel_used || f.energy_kwh || 0))},
+                                        '[]'::jsonb
                                     )
+                                    ON CONFLICT (vehicleno, starttime_ms, endtime_ms) DO NOTHING
                                 `);
                             }
                         }

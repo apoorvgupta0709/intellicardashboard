@@ -9,7 +9,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
 async function ingestLiveDataDaemon() {
-    console.log('🚀 Starting Intellicar Live Data Daemon (Running every 30 mins)...');
+    console.log('🚀 Starting Intellicar Live Data Daemon (Running every 60 mins)...');
 
     if (!process.env.DATABASE_URL) {
         console.error('❌ DATABASE_URL is not defined in .env.local');
@@ -23,7 +23,7 @@ async function ingestLiveDataDaemon() {
     const telSchema = pgSchema('telemetry');
     const batteryReadings = telSchema.table('battery_readings', {
         time: timestamp('time', { withTimezone: true }).notNull(),
-        device_id: varchar('device_id', { length: 50 }).notNull(),
+        vehiclenos: varchar('vehiclenos', { length: 50 }).notNull(),
         battery_id: varchar('battery_id', { length: 100 }),
         soc: real('soc'),
         soh: real('soh'),
@@ -32,7 +32,7 @@ async function ingestLiveDataDaemon() {
         charge_cycle: real('charge_cycle'),
         temperature: real('temperature'),
         power_watts: real('power_watts'),
-    }, (table) => ({ pk: [table.time, table.device_id] }));
+    }, (table) => ({ pk: [table.time, table.vehiclenos] }));
 
     async function fetchAndSaveLiveCycle() {
         console.log(`\n--- [${new Date().toISOString()}] Fetching live data ---`);
@@ -140,7 +140,7 @@ async function ingestLiveDataDaemon() {
 
                             await telemetryDb.execute(sql`
                                 INSERT INTO telemetry.battery_readings (
-                                    time, device_id, battery_id,
+                                    time, vehiclenos, battery_id,
                                     soc, soh, voltage, current, charge_cycle, temperature, power_watts,
                                     source, can_payload, can_received_at, can_sample_time,
                                     rated_capacity, dod, no_of_cells, cell_voltage, cell_temperature
@@ -150,7 +150,7 @@ async function ingestLiveDataDaemon() {
                                     ${'live'}, ${JSON.stringify(data)}::jsonb, ${nowIso}::timestamptz, ${canSampleIso}::timestamptz,
                                     ${rated_capacity}, ${dod}, ${no_of_cells}, ${cell_voltage}::real[], ${cell_temperature}::real[]
                                 )
-                                ON CONFLICT (time, device_id) DO NOTHING;
+                                ON CONFLICT (time, vehiclenos) DO NOTHING;
                             `);
                         }
                     }
@@ -193,9 +193,9 @@ async function ingestLiveDataDaemon() {
         }
     }
 
-    // Run once immediately, then every 30 mins
+    // Run once immediately, then every 60 mins
     fetchAndSaveLiveCycle();
-    setInterval(fetchAndSaveLiveCycle, 30 * 60 * 1000);
+    setInterval(fetchAndSaveLiveCycle, 60 * 60 * 1000);
 }
 
 ingestLiveDataDaemon();

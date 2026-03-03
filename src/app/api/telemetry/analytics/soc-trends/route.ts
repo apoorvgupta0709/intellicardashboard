@@ -32,7 +32,7 @@ export async function GET(req: Request) {
       `;
 
             if (auth.role === 'dealer') {
-                query += ` AND device_id IN (SELECT device_id FROM device_battery_map WHERE dealer_id = '${auth.dealer_id}')`;
+                query += ` AND vehiclenos IN (SELECT vehicle_number FROM device_battery_map WHERE dealer_id = '${auth.dealer_id}')`;
             }
 
             query += ` GROUP BY bucket::date ORDER BY date ASC`;
@@ -53,7 +53,7 @@ export async function GET(req: Request) {
       `;
 
             if (auth.role === 'dealer') {
-                fallbackQuery += ` AND device_id IN (SELECT device_id FROM device_battery_map WHERE dealer_id = '${auth.dealer_id}')`;
+                fallbackQuery += ` AND vehiclenos IN (SELECT vehicle_number FROM device_battery_map WHERE dealer_id = '${auth.dealer_id}')`;
             }
 
             fallbackQuery += ` GROUP BY time::date ORDER BY date ASC`;

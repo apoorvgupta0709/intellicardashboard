@@ -30,8 +30,8 @@ export async function GET(
             'temperature', r.temperature,
             'time', r.time
           )
-          FROM telemetry.battery_readings r 
-          WHERE r.device_id = m.device_id 
+          FROM telemetry.battery_readings r
+          WHERE r.vehiclenos = m.vehicle_number
           ORDER BY r.time DESC LIMIT 1
         ) as latest_battery,
         (

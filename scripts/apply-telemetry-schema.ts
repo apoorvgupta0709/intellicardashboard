@@ -20,7 +20,6 @@ async function applyMigrations() {
 
   try {
     console.log('1. Enabling extensions...');
-    // await db.execute(sql`CREATE EXTENSION IF NOT EXISTS timescaledb;`);
     await db.execute(sql`CREATE EXTENSION IF NOT EXISTS postgis;`);
 
     console.log('2. Creating telemetry schema...');
@@ -29,45 +28,93 @@ async function applyMigrations() {
     console.log('3. Creating battery_readings table...');
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS telemetry.battery_readings (
-          time            TIMESTAMPTZ    NOT NULL,
-          device_id       VARCHAR(50)    NOT NULL,
-          battery_id      VARCHAR(100),
-          soc             REAL,
-          soh             REAL,
-          voltage         REAL,
-          current         REAL,
-          charge_cycle    INTEGER,
-          temperature     REAL,
-          power_watts     REAL,
+          time                        TIMESTAMPTZ    NOT NULL,
+          vehiclenos                  VARCHAR(50)    NOT NULL,
+          battery_id                  VARCHAR(100),
+          soc                         REAL,
+          soh                         REAL,
+          voltage                     REAL,
+          current                     REAL,
+          charge_cycle                REAL,
+          temperature                 REAL,
+          power_watts                 REAL,
 
-          -- NEW: store full CAN for live reads
-          source          TEXT           NOT NULL DEFAULT 'history',
-          can_payload     JSONB          NULL,
-          can_received_at TIMESTAMPTZ    NULL,
-          can_sample_time TIMESTAMPTZ    NULL,
-          rated_capacity  REAL           NULL,
-          dod             REAL           NULL,
-          no_of_cells     INTEGER        NULL,
-          cell_voltage    REAL[]         NULL,
-          cell_temperature REAL[]        NULL,
+          -- CAN ingestion metadata
+          source                      TEXT           NOT NULL DEFAULT 'history',
+          can_payload                 JSONB          NULL,
+          can_received_at             TIMESTAMPTZ    NULL,
+          can_sample_time             TIMESTAMPTZ    NULL,
 
-          PRIMARY KEY (time, device_id)
+          -- BMS configuration
+          rated_capacity              REAL           NULL,
+          dod                         REAL           NULL,
+          no_of_cells                 INTEGER        NULL,
+          no_of_temperature_sensors   INTEGER        NULL,
+          cell_voltage                REAL[]         NULL,
+          cell_temperature            REAL[]         NULL,
+
+          -- BMS alarm / protection flags (raw integer bitmask from CAN)
+          alarm                       INTEGER        NULL,
+          allow_charging              INTEGER        NULL,
+          allow_discharging           INTEGER        NULL,
+          balancing_status            INTEGER        NULL,
+          protection                  INTEGER        NULL,
+
+          -- Cell extremes
+          maximum_cell_voltage        REAL           NULL,
+          minimum_cell_voltage        REAL           NULL,
+          maximum_cell_temperature    REAL           NULL,
+          minimum_cell_temperature    REAL           NULL,
+
+          -- Identifiers from BMS
+          iot_no                      INTEGER        NULL,
+          protocol_version            INTEGER        NULL,
+          bms_firmware_version        INTEGER        NULL,
+          battery_serial_number_1     BIGINT         NULL,
+          battery_serial_number_2     BIGINT         NULL,
+          bms_serial_no_1             BIGINT         NULL,
+          bms_serial_no_2             BIGINT         NULL,
+
+          PRIMARY KEY (time, vehiclenos)
       );
     `);
 
-    await db.execute(sql`ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'history';`);
-    await db.execute(sql`ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS can_payload JSONB NULL;`);
-    await db.execute(sql`ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS can_received_at TIMESTAMPTZ NULL;`);
-    await db.execute(sql`ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS can_sample_time TIMESTAMPTZ NULL;`);
-    await db.execute(sql`ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS rated_capacity REAL NULL;`);
-    await db.execute(sql`ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS dod REAL NULL;`);
-    await db.execute(sql`ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS no_of_cells INTEGER NULL;`);
-    await db.execute(sql`ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS cell_voltage REAL[] NULL;`);
-    await db.execute(sql`ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS cell_temperature REAL[] NULL;`);
-    // Note: Skipping create_hypertable as timescaledb is not available
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_battery_readings_device ON telemetry.battery_readings (device_id, time DESC);`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_battery_readings_soc ON telemetry.battery_readings (device_id, soc, time DESC);`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_battery_readings_source_time ON telemetry.battery_readings (device_id, source, time DESC);`);
+    // Idempotent column additions for existing deployments
+    const batteryAlters = [
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'history'`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS can_payload JSONB NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS can_received_at TIMESTAMPTZ NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS can_sample_time TIMESTAMPTZ NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS rated_capacity REAL NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS dod REAL NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS no_of_cells INTEGER NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS no_of_temperature_sensors INTEGER NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS cell_voltage REAL[] NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS cell_temperature REAL[] NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS alarm INTEGER NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS allow_charging INTEGER NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS allow_discharging INTEGER NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS balancing_status INTEGER NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS protection INTEGER NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS maximum_cell_voltage REAL NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS minimum_cell_voltage REAL NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS maximum_cell_temperature REAL NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS minimum_cell_temperature REAL NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS iot_no INTEGER NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS protocol_version INTEGER NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS bms_firmware_version INTEGER NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS battery_serial_number_1 BIGINT NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS battery_serial_number_2 BIGINT NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS bms_serial_no_1 BIGINT NULL`,
+      `ALTER TABLE telemetry.battery_readings ADD COLUMN IF NOT EXISTS bms_serial_no_2 BIGINT NULL`,
+    ];
+    for (const stmt of batteryAlters) {
+      await db.execute(sql.raw(stmt));
+    }
+
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_battery_readings_vehicle ON telemetry.battery_readings (vehiclenos, time DESC);`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_battery_readings_soc ON telemetry.battery_readings (vehiclenos, soc, time DESC);`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_battery_readings_source_time ON telemetry.battery_readings (vehiclenos, source, time DESC);`);
 
     console.log('4. Creating gps_readings table...');
     await db.execute(sql`
@@ -87,7 +134,6 @@ async function applyMigrations() {
           PRIMARY KEY (time, device_id)
       );
     `);
-    // Note: Skipping create_hypertable as timescaledb is not available
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_gps_device_time ON telemetry.gps_readings (device_id, time DESC);`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_gps_location ON telemetry.gps_readings USING GIST (location);`);
 
@@ -112,19 +158,28 @@ async function applyMigrations() {
     console.log('6. Creating energy_consumption table...');
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS telemetry.energy_consumption (
-          id              SERIAL PRIMARY KEY,
-          device_id       VARCHAR(50)   NOT NULL,
-          start_time      TIMESTAMPTZ   NOT NULL,
-          end_time        TIMESTAMPTZ   NOT NULL,
-          energy_used_kwh REAL,
-          start_soc       REAL,
-          end_soc         REAL,
-          last_ign_on     TIMESTAMPTZ,
-          last_ign_off    TIMESTAMPTZ,
-          charging_events JSONB DEFAULT '[]',
-          created_at      TIMESTAMPTZ   DEFAULT NOW()
+          vehicleno           VARCHAR(50)    NOT NULL,
+          starttime_ms        BIGINT         NOT NULL,
+          endtime_ms          BIGINT         NOT NULL,
+          start_time          TIMESTAMPTZ    NULL,
+          end_time            TIMESTAMPTZ    NULL,
+          is_ev               BOOLEAN,
+          energy_consumption  REAL,
+          start_fl            REAL,
+          end_fl              REAL,
+          start_fl_litres     REAL,
+          end_fl_litres       REAL,
+          last_ign_on         NUMERIC,
+          last_ign_off        NUMERIC,
+          refueling_events    JSONB          DEFAULT '[]',
+          api_status          TEXT,
+          api_msg             TEXT,
+          api_err             JSONB,
+          pulled_at           TIMESTAMPTZ    DEFAULT NOW(),
+          PRIMARY KEY (vehicleno, starttime_ms, endtime_ms)
       );
     `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_energy_vehicleno_time ON telemetry.energy_consumption (vehicleno, starttime_ms DESC);`);
 
     console.log('7. Creating rejected_readings table...');
     await db.execute(sql`

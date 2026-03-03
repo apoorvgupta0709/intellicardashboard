@@ -30,13 +30,13 @@ export async function GET(req: Request) {
     // Average SOH from most recent reading per device
     const sohResult = await telemetryDb.execute(sql`
       WITH LatestReadings AS (
-        SELECT DISTINCT ON (device_id) soh, device_id
+        SELECT DISTINCT ON (vehiclenos) soh, vehiclenos
         FROM telemetry.battery_readings
-        ORDER BY device_id, time DESC
+        ORDER BY vehiclenos, time DESC
       )
-      SELECT AVG(soh) as avg_soh FROM LatestReadings 
+      SELECT AVG(soh) as avg_soh FROM LatestReadings
       WHERE soh IS NOT NULL
-      ${auth.role === 'dealer' ? sql` AND device_id IN (SELECT device_id FROM device_battery_map WHERE dealer_id = ${auth.dealer_id})` : sql``}
+      ${auth.role === 'dealer' ? sql` AND vehiclenos IN (SELECT vehicle_number FROM device_battery_map WHERE dealer_id = ${auth.dealer_id})` : sql``}
     `);
     const avgSoh = Number(sohResult[0]?.avg_soh || 0);
 
@@ -44,14 +44,14 @@ export async function GET(req: Request) {
     // Positive current means charging. Assuming reading is recent (e.g. within last 1 hour)
     const chargingResult = await telemetryDb.execute(sql`
       WITH LatestReadings AS (
-        SELECT DISTINCT ON (device_id) current, time, device_id
+        SELECT DISTINCT ON (vehiclenos) current, time, vehiclenos
         FROM telemetry.battery_readings
-        ORDER BY device_id, time DESC
+        ORDER BY vehiclenos, time DESC
       )
-      SELECT COUNT(*) as charging_count 
-      FROM LatestReadings 
+      SELECT COUNT(*) as charging_count
+      FROM LatestReadings
       WHERE current > 0 AND time >= NOW() - INTERVAL '1 hour'
-      ${auth.role === 'dealer' ? sql` AND device_id IN (SELECT device_id FROM device_battery_map WHERE dealer_id = ${auth.dealer_id})` : sql``}
+      ${auth.role === 'dealer' ? sql` AND vehiclenos IN (SELECT vehicle_number FROM device_battery_map WHERE dealer_id = ${auth.dealer_id})` : sql``}
     `);
     const chargingCount = Number(chargingResult[0]?.charging_count || 0);
 
