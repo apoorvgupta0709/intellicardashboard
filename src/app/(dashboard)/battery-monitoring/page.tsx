@@ -1,42 +1,27 @@
-import FleetKPICards from '@/components/battery-monitoring/FleetKPICards';
-import SOCDistribution from '@/components/battery-monitoring/SOCDistribution';
-import AlertFeed from '@/components/battery-monitoring/AlertFeed';
+"use client";
 
-import FleetMapDynamic from '@/components/battery-monitoring/FleetMapDynamic';
+import { useAuth } from '@/lib/auth/AuthContext';
+import CEODashboard from '@/components/battery-monitoring/CEODashboard';
+import DealerDashboard from '@/components/battery-monitoring/DealerDashboard';
 
 export default function BatteryMonitoringDashboard() {
+  const { role } = useAuth();
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">
-          Fleet Overview
+          {role === 'ceo' ? 'Fleet Command Center' : 'Operations Dashboard'}
         </h1>
         <p className="mt-1 text-sm text-gray-500">
-          Real-time metrics, analytics, and operational tracking for your battery assets.
+          {role === 'ceo'
+            ? 'Strategic fleet overview — demand growth, warranty risk, and dealer performance.'
+            : 'Operational monitoring — device health, usage patterns, and customer insights.'}
         </p>
       </div>
 
-      {/* KPI Row */}
-      <FleetKPICards />
-
-      {/* Second Row: Map and Alerts/Distribution */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Map takes up 2 columns */}
-        <div className="lg:col-span-2">
-          <FleetMapDynamic />
-        </div>
-
-        {/* Analytics & Alerts stacked in 1 column */}
-        <div className="space-y-6 flex flex-col h-full">
-          <div className="flex-1 min-h-[350px]">
-            <SOCDistribution />
-          </div>
-          <div className="flex-1 min-h-[400px] lg:min-h-0">
-            <AlertFeed />
-          </div>
-        </div>
-      </div>
+      {role === 'ceo' ? <CEODashboard /> : <DealerDashboard />}
     </div>
   );
 }
